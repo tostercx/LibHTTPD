@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: api.c,v 1.5 2002/03/04 03:53:42 bambi Exp $
+** $Id: api.c,v 1.6 2002/03/13 07:24:19 bambi Exp $
 **
 */
 
@@ -623,6 +623,31 @@ int httpdAddCContent(server, dir, name, indexFlag, preload, function)
 	return(0);
 }
 
+
+int httpdAddCWildcardContent(server, dir, preload, function)
+	httpd	*server;
+	char	*dir;
+	int	(*preload)();
+	void	(*function)();
+{
+	httpDir	*dirPtr;
+	httpContent *newEntry;
+
+	dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
+	newEntry =  malloc(sizeof(httpContent));
+	if (newEntry == NULL)
+		return(-1);
+	bzero(newEntry,sizeof(httpContent));
+	newEntry->name = NULL;
+	newEntry->type = HTTP_C_WILDCARD;
+	newEntry->indexFlag = HTTP_FALSE;
+	newEntry->function = function;
+	newEntry->preload = preload;
+	newEntry->next = dirPtr->entries;
+	dirPtr->entries = newEntry;
+	return(0);
+}
+
 int httpdAddStaticContent(server, dir, name, indexFlag, preload, data)
 	httpd	*server;
 	char	*dir;
@@ -826,6 +851,7 @@ void httpdProcessRequest(server)
 	switch(entry->type)
 	{
 		case HTTP_C_FUNCT:
+		case HTTP_C_WILDCARD:
 			(entry->function)(server);
 			break;
 
@@ -838,7 +864,7 @@ void httpdProcessRequest(server)
 			break;
 
 		case HTTP_WILDCARD:
-			if (_httpd_sendDirectoryEntry(server,entry,entryName) < 0)
+			if (_httpd_sendDirectoryEntry(server,entry,entryName)<0)
 			{
 				_httpd_send404(server);
 			}

@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: protocol.c,v 1.3 2002/03/04 03:53:43 bambi Exp $
+** $Id: protocol.c,v 1.4 2002/03/13 07:24:20 bambi Exp $
 **
 */
 
@@ -392,7 +392,8 @@ httpContent *_httpd_findContentEntry(server, dir, entryName)
 	curEntry = dir->entries;
 	while(curEntry)
 	{
-		if (curEntry->type == HTTP_WILDCARD)
+		if (curEntry->type == HTTP_WILDCARD || 
+		    curEntry->type ==HTTP_C_WILDCARD)
 			break;
 		if (*entryName == 0 && curEntry->indexFlag)
 			break;

@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: httpd.h,v 1.3 2002/03/04 03:53:42 bambi Exp $
+** $Id: httpd.h,v 1.4 2002/03/13 07:24:20 bambi Exp $
 **
 */
 
@@ -69,6 +69,7 @@ extern "C" {
 #define HTTP_EMBER_FUNCT	3
 #define HTTP_STATIC		4
 #define HTTP_WILDCARD		5
+#define HTTP_C_WILDCARD		6
 
 #define HTTP_METHOD_ERROR "\n<B>ERROR : Method Not Implemented</B>\n\n"
 
@@ -160,6 +161,7 @@ int httpdAddCContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),void(*)()));
 int httpdAddFileContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),char*));
 int httpdAddStaticContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),char*));
 int httpdAddWildcardContent __ANSI_PROTO((httpd*,char*,int(*)(),char*));
+int httpdAddCWildcardContent __ANSI_PROTO((httpd*,char*,int(*)(),void(*)()));
 int httpdAddVariable __ANSI_PROTO((httpd*,char*, char*));
 int httpdGetConnection __ANSI_PROTO((httpd*));
 int httpdReadRequest __ANSI_PROTO((httpd*));

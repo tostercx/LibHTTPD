@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: test_httpd.c,v 1.4 2002/03/04 03:53:43 bambi Exp $
+** $Id: test_httpd.c,v 1.6 2002/03/18 03:57:47 bambi Exp $
 **
 */
 
@@ -49,6 +49,8 @@ void index_html(server)
 	    getpid());
 	httpdPrintf(server,
 	    "Click <A HREF=/test1.html>here</A> to view a test page<P>\n");
+	httpdPrintf(server,
+	    "Or <A HREF=/wildcard/foo>here</A> for a test wildcard page<P>\n");
 	httpdPrintf(server, "<P><FORM ACTION=test2.html METHOD=POST>\n");
 	httpdPrintf(server, "Enter your name <INPUT NAME=name SIZE=10>\n");
 	httpdPrintf(server, "<INPUT TYPE=SUBMIT VALUE=Click!><P></FORM>\n");
@@ -77,6 +79,16 @@ void test2_html(server)
 	httpdOutput(server,"Hello $name");
 }
 
+void test3_html(server)
+	httpd	*server;
+{
+	char	*path;
+
+	path = httpdRequestPath(server);
+	httpdOutput(server,"Wilcard dynamic request received<P>");
+	httpdPrintf(server,"The requested path was %s<P>", path);
+}
+
 
 
 int main(argc, argv)
@@ -88,7 +100,7 @@ int main(argc, argv)
 	/*
 	** Create a server and setup our logging
 	*/
-	server = httpdCreate(NULL,80);
+	server = httpdCreate(NULL,81);
 	if (server == NULL)
 	{
 		perror("Can't create server");
@@ -104,6 +116,7 @@ int main(argc, argv)
 		NULL, index_html);
 	httpdAddCContent(server,"/", "test2.html", HTTP_FALSE, 
 		NULL, test2_html);
+	httpdAddCWildcardContent(server,"/wildcard", NULL, test3_html);
 	httpdAddStaticContent(server, "/", "test1.html", HTTP_FALSE,
 		NULL, test1_html);
 
