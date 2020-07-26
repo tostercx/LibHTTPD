@@ -1,0 +1,32 @@
+# Configure template for libhttpd
+# When run through GNU autoconf it will generate the configure script.
+
+AC_INIT(Site.mm.in)
+AC_CONFIG_HEADER(src/config.h)
+
+VERSION="0.1 ALPHA 1"
+AC_DEFINE_UNQUOTED(VERSION, "$VERSION")
+AC_SUBST(VERSION)
+
+echo "Configuring libhttpd"
+
+AC_PROG_CC
+if test "$ac_cv_prog_CC" = "gcc"; 
+then
+	WALL=-Wall
+else
+	WALL=
+fi
+AC_DEFINE_UNQUOTED(WALL, "$WALL")
+AC_SUBST(WALL)
+
+AC_PROG_RANLIB
+
+AC_CHECK_HEADERS(string.h strings.h stdarg.h unistd.h)
+AC_HAVE_LIBRARY(socket)
+AC_HAVE_LIBRARY(nsl)
+AC_OUTPUT(Site.mm)
+echo
+echo "HTTPD Library Configuration complete"
+echo
+
