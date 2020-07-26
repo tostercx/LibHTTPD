@@ -1,28 +1,27 @@
 /*
-** Copyright (c) 2002  Hughes Technologies Pty Ltd.  All rights
-** reserved.
+** Copyright (c) 2017  Hughes Technologies Pty Ltd. 
 **
-** Terms under which this software may be used or copied are
-** provided in the  specific license associated with this product.
-**
-** Hughes Technologies disclaims all warranties with regard to this
-** software, including all implied warranties of merchantability and
-** fitness, in no event shall Hughes Technologies be liable for any
-** special, indirect or consequential damages or any damages whatsoever
-** resulting from loss of use, data or profits, whether in an action of
-** contract, negligence or other tortious action, arising out of or in
-** connection with the use or performance of this software.
-**
-**
-** $Id: ip_acl.c,v 1.3 2002/11/25 02:15:51 bambi Exp $
+** This program is free software: you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation, either version 3 of the License, or
+** (at your option) any later version.
+** 
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU General Public License for more details.
+** 
+** You should have received a copy of the GNU General Public License
+** along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **
 */
-
-#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+
+#include "config.h"
 
 #if defined(_WIN32)
 #else
@@ -104,7 +103,7 @@ static int _isInCidrBlock(server, addr1, len1, addr2, len2)
 
 	if(len2 < len1)
 	{
-		_httpd_writeErrorLog(server,LEVEL_ERROR,
+		_httpd_writeErrorLog(server, NULL, LEVEL_ERROR, 
 		    "IP Address must be more specific than network block");
 		return(0);
 	}
@@ -138,7 +137,7 @@ httpAcl *httpdAddAcl(server, acl, cidr, action)
 	int	action;
 {
 	httpAcl	*cur;
-	int	addr,
+	u_int	addr,
 		len;
 
 	/*
@@ -146,13 +145,13 @@ httpAcl *httpdAddAcl(server, acl, cidr, action)
 	*/
 	if(scanCidr(cidr, &addr, &len) < 0)
 	{
-		_httpd_writeErrorLog(server,LEVEL_ERROR,
+		_httpd_writeErrorLog(server, NULL, LEVEL_ERROR, 
 			"Invalid IP address format");
 		return(NULL);
 	}
 	if (action != HTTP_ACL_PERMIT && action != HTTP_ACL_DENY)
 	{
-		_httpd_writeErrorLog(server,LEVEL_ERROR,
+		_httpd_writeErrorLog(server, NULL, LEVEL_ERROR, 
 			"Invalid acl action");
 		return(NULL);
 	}
@@ -187,18 +186,19 @@ httpAcl *httpdAddAcl(server, acl, cidr, action)
 }
 
 
-int httpdCheckAcl(server, acl)
+int httpdCheckAcl(server, request, acl)
 	httpd	*server;
+	httpReq	*request;
 	httpAcl	*acl;
 {
 	httpAcl	*cur;
-	int	addr, len,
-		res,
+	u_int	addr, len;
+	int	res,
 		action;
 
 
 	action = HTTP_ACL_DENY;
-	scanCidr(server->clientAddr, &addr, &len);
+	scanCidr(request->clientAddr, &addr, &len);
 	cur = acl;
 	while(cur)
 	{
@@ -212,8 +212,8 @@ int httpdCheckAcl(server, acl)
 	}
 	if (action == HTTP_ACL_DENY)
 	{
-		_httpd_send403(server);
-		_httpd_writeErrorLog(server,LEVEL_ERROR,
+		_httpd_send403(server, request);
+		_httpd_writeErrorLog(server, request, LEVEL_ERROR, 
     			"Access denied by ACL");
 	}
 	return(action);

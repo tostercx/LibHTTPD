@@ -1,4 +1,20 @@
-Version  1.4	2 JFeb 2005
+Version  2.0	1 Jan 2017
+--------------------------
+
+*	API modified to include a pointer to the current request.
+	This allows the library to be used in multi threaded apps
+	and apps that may make HTTP calls back to the host app
+	during the processing of an HTTP request (i.e. calling
+	a web service within the app to get data used to generate
+	and HTML page served by the app).
+
+*	Numerous modifications for portability and code correctness.
+	This release has been in use internally for several years and
+	is now being released to the general public under the GPL.
+
+
+
+Version  1.4	2 Feb 2005
 --------------------------
 
 * 	Fixed problem with the authentication routine prototypes

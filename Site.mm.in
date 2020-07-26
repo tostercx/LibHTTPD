@@ -6,7 +6,7 @@
 COMPILER= @CC@
 WALL= @WALL@
 VERSION= "@VERSION@"
-INST_DIR= /usr/local/nk
+INST_DIR= /usr/local
 CC_ONLY_FLAGS= -I$(TOP)/src
 
 #
@@ -40,7 +40,7 @@ EMBER_LIB= @EMBER_LIB@
 EXTRA_CFLAGS= 
 
 # 
-EMBER_INST_DIR= @EMBER_INSTALL_DIR@
+EMBER_DIR= @EMBER_DIR@
 
-CFLAGS= -g -I$(TOP)/ -I/usr/local/include $(EXTRA_CFLAGS) -D$(OS_TYPE) -I$(EMBER_INST_DIR)/include
-LDLIBS= -L/usr/local/lib -L$(TOP)/lib @LIBS@ $(EXTRA_LIBS)
+CFLAGS= -g -I$(TOP)/ -I/usr/local/include $(EXTRA_CFLAGS) -D$(OS_TYPE) -I$(EMBER_DIR)/include
+LDLIBS= -L/usr/local/lib -L$(TOP)/lib @LIBS@ $(EXTRA_LIBS) -L$(EMBER_DIR)/lib $(EMBER_LIB)

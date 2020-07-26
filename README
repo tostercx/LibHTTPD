@@ -1,4 +1,7 @@
 
+LibHTTPD 2.0
+------------
+
 Welcome to LibHTTPD, a library for the creation of embedded web servers.
 Complete documentation is available in the PDF file location in the doc
 directory.
@@ -12,16 +15,15 @@ To build this software simply run
 The software will be compiled and installed into /usr/local/lib and
 /usr/local/include.  To use the software you will have to include the
 library's header file into your application and link against the library
-itself.  Details are privided in the documentation.
+itself.  Details are privided in the documentation.  If you want to install
+the software into somewhere other than /usr/local then edit INST_DIR in
+site.mm.in before running ./configure
 
-This software has been developed by David J. Hughes (aka Bambi) of 
-Hughes Technologies in Australia.  You can always find a current verion
-of this software at www.Hughes.com.au
+This software has been developed by David Hughes at Hughes Technologies 
+in Australia.  You can always find a current verion of this software at 
+www.Hughes.com.au
 
 This software is released under the GPL.  If you wish to incorporate
-this code in a commercial application then OEM licenses are available
-from Hughes Technologies.  Royalty free OEM licenses can be purchased
-from the Hughes Technologies web site at
-
-	http://www.Hughes.com.au/products/libhttpd/
+this code in a commercial application the please contact us via the
+Hughes Technologies web site.
 

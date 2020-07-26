@@ -1,28 +1,27 @@
 /*
-** Copyright (c) 2002-2004  Hughes Technologies Pty Ltd.  All rights
-** reserved.
+** Copyright (c) 2017  Hughes Technologies Pty Ltd. 
 **
-** Terms under which this software may be used or copied are
-** provided in the  specific license associated with this product.
-**
-** Hughes Technologies disclaims all warranties with regard to this
-** software, including all implied warranties of merchantability and
-** fitness, in no event shall Hughes Technologies be liable for any
-** special, indirect or consequential damages or any damages whatsoever
-** resulting from loss of use, data or profits, whether in an action of
-** contract, negligence or other tortious action, arising out of or in
-** connection with the use or performance of this software.
-**
-**
-** $Id: ember.c,v 1.1 2004/05/09 18:06:24 bambi Exp $
+** This program is free software: you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation, either version 3 of the License, or
+** (at your option) any later version.
+** 
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU General Public License for more details.
+** 
+** You should have received a copy of the GNU General Public License
+** along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **
 */
 
-#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "config.h"
 
 #if defined(_WIN32)
 #else
@@ -32,9 +31,14 @@
 #include "httpd.h"
 #include "httpd_priv.h"
 
-/* NOTE : This ifdef is for the entire file! */
+
+/*
+** NOTE : The #ifdef includes the entire file!
+**        If HAVE_EMBER is not defined then none of this code is compiled.
+*/
 
 #ifdef HAVE_EMBER
+
 #include <ember.h>
 
 /**************************************************************************

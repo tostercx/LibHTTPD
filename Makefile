@@ -11,14 +11,15 @@ TARGETS= all install clean
 $(TARGETS) :: Makefile.full
 	@$(MAKE) -f Makefile.full $@
 
-Makefile.full :: $(TOP)/Site.mm Makefile.tmpl
+Makefile.full :: $(TOP)/site.mm Makefile.tmpl
 	@$(TOP)/makegen/makegen $(TOP) ;\
 	echo "Done."
 
 very-clean: clean
 	rm src/config.h
 	rm -f config.cache config.log config.status
-	rm -f Site.mm
+	rm -f site.mm
+	rm -rf autom4te.cache
 
 backup:
 	@cd .. ;\

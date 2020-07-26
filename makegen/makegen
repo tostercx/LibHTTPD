@@ -4,7 +4,7 @@
 #	Any line in a Makefile.tmpl file that starts with "!" causes
 #	a shell script to be executed with it's output redirected into
 #	the Makefile.  This is very simple but allows me to do things
-#	like include Site.mm global definitions and protability stuff
+#	like include site.mm global definitions and protability stuff
 #	without needing the new bsd make etc.
 #
 #						bambi
@@ -103,7 +103,7 @@ OS_TYPE=$OS_TYPE
 
 !EOF!
 
-cat $TOP/Site.mm >> Makefile.full
+cat $TOP/site.mm >> Makefile.full
 
 echo "
 

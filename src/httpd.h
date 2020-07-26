@@ -1,22 +1,22 @@
 /*
-** Copyright (c) 2002  Hughes Technologies Pty Ltd.  All rights
-** reserved.
+** Copyright (c) 2017  Hughes Technologies Pty Ltd. 
 **
-** Terms under which this software may be used or copied are
-** provided in the  specific license associated with this product.
-**
-** Hughes Technologies disclaims all warranties with regard to this
-** software, including all implied warranties of merchantability and
-** fitness, in no event shall Hughes Technologies be liable for any
-** special, indirect or consequential damages or any damages whatsoever
-** resulting from loss of use, data or profits, whether in an action of
-** contract, negligence or other tortious action, arising out of or in
-** connection with the use or performance of this software.
-**
-**
-** $Id: httpd.h,v 1.16 2005/01/26 04:48:28 bambi Exp $
+** This program is free software: you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation, either version 3 of the License, or
+** (at your option) any later version.
+** 
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU General Public License for more details.
+** 
+** You should have received a copy of the GNU General Public License
+** along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **
 */
+
+
 
 /*
 **  libhttpd Header File
@@ -52,7 +52,7 @@ extern "C" {
 
 
 #define	HTTP_PORT 		80
-#define HTTP_MAX_LEN		10240
+#define HTTP_MAX_LEN		102400
 #define HTTP_MAX_URL		1024
 #define HTTP_MAX_HEADERS	1024
 #define HTTP_MAX_AUTH		128
@@ -78,10 +78,10 @@ extern "C" {
 
 #define HTTP_METHOD_ERROR "\n<B>ERROR : Method Not Implemented</B>\n\n"
 
-#define httpdRequestMethod(s) 		s->request.method
-#define httpdRequestPath(s)		s->request.path
-#define httpdRequestContentType(s)	s->request.contentType
-#define httpdRequestContentLength(s)	s->request.contentLength
+#define httpdRequestMethod(r) 		r->method
+#define httpdRequestPath(r)		r->path
+#define httpdRequestContentType(r)	r->contentType
+#define httpdRequestContentLength(r)	r->contentLength
 
 #define HTTP_ACL_PERMIT		1
 #define HTTP_ACL_DENY		2
@@ -94,20 +94,6 @@ extern char 	LIBHTTPD_VERSION[],
 /***********************************************************************
 ** Type Definitions
 */
-
-typedef	struct {
-	int	method,
-		contentLength,
-		authLength;
-	char	path[HTTP_MAX_URL],
-		host[HTTP_MAX_URL],
-		userAgent[HTTP_MAX_URL],
-		referer[HTTP_MAX_URL],
-		ifModified[HTTP_MAX_URL],
-		contentType[HTTP_MAX_URL],
-		authUser[HTTP_MAX_AUTH],
-		authPassword[HTTP_MAX_AUTH];
-} httpReq;
 
 
 typedef struct _httpd_var{
@@ -128,6 +114,14 @@ typedef struct _httpd_content{
 	struct	_httpd_content 	*next;
 } httpContent;
 
+typedef struct _httpd_dir{
+	char	*name;
+	struct	_httpd_dir *children,
+			*next;
+	struct	_httpd_content *entries;
+} httpDir;
+
+
 typedef struct {
 	int		responseLength;
 	httpContent	*content;
@@ -138,12 +132,27 @@ typedef struct {
 } httpRes;
 
 
-typedef struct _httpd_dir{
-	char	*name;
-	struct	_httpd_dir *children,
-			*next;
-	struct	_httpd_content *entries;
-} httpDir;
+typedef	struct {
+	int	clientSock,
+		method,
+		readBufRemain,
+		contentLength,
+		authLength;
+	char	path[HTTP_MAX_URL],
+		host[HTTP_MAX_URL],
+		userAgent[HTTP_MAX_URL],
+		referer[HTTP_MAX_URL],
+		ifModified[HTTP_MAX_URL],
+		contentType[HTTP_MAX_URL],
+		authUser[HTTP_MAX_AUTH],
+		authPassword[HTTP_MAX_AUTH],
+		clientAddr[HTTP_IP_ADDR_LEN],
+		readBuf[HTTP_READ_BUF_LEN + 1],
+		*readBufPtr;
+	httpRes response;
+	httpVar	*variables;
+} httpReq;
+
 
 
 typedef struct ip_acl_s{
@@ -156,18 +165,10 @@ typedef struct ip_acl_s{
 
 typedef struct {
 	int	port,
-		serverSock,
-		clientSock,
-		readBufRemain,
-		startTime;
-	char	clientAddr[HTTP_IP_ADDR_LEN],
-		fileBasePath[HTTP_MAX_URL],
-		readBuf[HTTP_READ_BUF_LEN + 1],
-		*host,
-		*readBufPtr;
-	httpReq	request;
-	httpRes response;
-	httpVar	*variables;
+		serverSock;
+	time_t	startTime;
+	char	fileBasePath[HTTP_MAX_URL],
+		*serverHostname;
 	httpDir	*content;
 	httpAcl	*defaultAcl;
 	FILE	*accessLog,
@@ -190,40 +191,44 @@ int httpdAddEmberContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),char*));
 int httpdAddStaticContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),char*));
 int httpdAddWildcardContent __ANSI_PROTO((httpd*,char*,int(*)(),char*));
 int httpdAddCWildcardContent __ANSI_PROTO((httpd*,char*,int(*)(),void(*)()));
-int httpdAddVariable __ANSI_PROTO((httpd*,char*, char*));
-int httpdGetConnection __ANSI_PROTO((httpd*, struct timeval*));
-int httpdReadRequest __ANSI_PROTO((httpd*));
-int httpdCheckAcl __ANSI_PROTO((httpd*, httpAcl*));
-int httpdAuthenticate __ANSI_PROTO((httpd*, char*));
+int httpdAddVariable __ANSI_PROTO((httpd*, httpReq*, char*, char*));
+int httpdCheckAcl __ANSI_PROTO((httpd*, httpReq*, httpAcl*));
+int httpdAuthenticate __ANSI_PROTO((httpd*, httpReq*, char*));
 int httpdSetErrorFunction __ANSI_PROTO((httpd*,int,void(*)()));
 
-char *httpdRequestMethodName __ANSI_PROTO((httpd*));
+char *httpdRequestMethodName __ANSI_PROTO((httpReq*));
 char *httpdUrlEncode __ANSI_PROTO((char *));
+char *httpdGetAuthUsername __ANSI_PROTO((httpd*, httpReq*));
 
-void httpdAddHeader __ANSI_PROTO((httpd*, char*));
-void httpdSetContentType __ANSI_PROTO((httpd*, char*));
-void httpdSetResponse __ANSI_PROTO((httpd*, char*));
-void httpdEndRequest __ANSI_PROTO((httpd*));
-void httpdForceAuthenticate __ANSI_PROTO((httpd*, char*));
+
+void httpdAddHeader __ANSI_PROTO((httpd*, httpReq*, char*));
+void httpdSetContentType __ANSI_PROTO((httpd*, httpReq*, char*));
+void httpdSetResponse __ANSI_PROTO((httpd*, httpReq*, char*));
+void httpdEndRequest __ANSI_PROTO((httpd*, httpReq*));
+void httpdForceAuthenticate __ANSI_PROTO((httpd*, httpReq*, char*));
+void httpdSetExternalAuthUsername __ANSI_PROTO((httpd*, httpReq*, char*));
 
 httpd *httpdCreate __ANSI_PROTO(());
-void httpdFreeVariables __ANSI_PROTO((httpd*));
-void httpdDumpVariables __ANSI_PROTO((httpd*));
-void httpdOutput __ANSI_PROTO((httpd*, char*));
-void httpdPrintf __ANSI_PROTO((httpd*, char*, ...));
-void httpdProcessRequest __ANSI_PROTO((httpd*));
-void httpdSendHeaders __ANSI_PROTO((httpd*));
+httpReq *httpdReadRequest __ANSI_PROTO((httpd*, struct timeval*, int*));
+
+void httpdFreeVariables __ANSI_PROTO((httpd*, httpReq*));
+void httpdDumpVariables __ANSI_PROTO((httpd*, httpReq*));
+void httpdOutput __ANSI_PROTO((httpd*, httpReq*, char*));
+void httpdPrintf __ANSI_PROTO((httpd*, httpReq*, char*, ...));
+void httpdProcessRequest __ANSI_PROTO((httpd*, httpReq*));
+void httpdSendHeaders __ANSI_PROTO((httpd*, httpReq*));
 void httpdSetFileBase __ANSI_PROTO((httpd*, char*));
-void httpdSetCookie __ANSI_PROTO((httpd*, char*, char*));
-void httpdSendFile __ANSI_PROTO((httpd*, char*));
+void httpdSetCookie __ANSI_PROTO((httpd*, httpReq*, char*, char*));
+void httpdDeleteCookie __ANSI_PROTO((httpd*, httpReq*, char*));
+void httpdSendFile __ANSI_PROTO((httpd*, httpReq*, char*));
 
 void httpdSetErrorLog __ANSI_PROTO((httpd*, FILE*));
 void httpdSetAccessLog __ANSI_PROTO((httpd*, FILE*));
 void httpdSetDefaultAcl __ANSI_PROTO((httpd*, httpAcl*));
 
-httpVar	*httpdGetVariableByName __ANSI_PROTO((httpd*, char*));
-httpVar	*httpdGetVariableByPrefix __ANSI_PROTO((httpd*, char*));
-httpVar	*httpdGetVariableByPrefixedName __ANSI_PROTO((httpd*, char*, char*));
+httpVar	*httpdGetVariableByName __ANSI_PROTO((httpd*, httpReq*, char*));
+httpVar	*httpdGetVariableByPrefix __ANSI_PROTO((httpd*, httpReq*, char*));
+httpVar	*httpdGetVariableByPrefixedName __ANSI_PROTO((httpd*, httpReq*, char*, char*));
 httpVar *httpdGetNextVariableByPrefix __ANSI_PROTO((httpVar*, char*));
 
 httpAcl *httpdAddAcl __ANSI_PROTO((httpd*, httpAcl*, char*, int));

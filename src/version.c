@@ -1,23 +1,23 @@
 /*
-** Copyright (c) 2002  Hughes Technologies Pty Ltd.  All rights
-** reserved.
+** Copyright (c) 2017  Hughes Technologies Pty Ltd. 
 **
-** Terms under which this software may be used or copied are
-** provided in the  specific license associated with this product.
-**
-** Hughes Technologies disclaims all warranties with regard to this
-** software, including all implied warranties of merchantability and
-** fitness, in no event shall Hughes Technologies be liable for any
-** special, indirect or consequential damages or any damages whatsoever
-** resulting from loss of use, data or profits, whether in an action of
-** contract, negligence or other tortious action, arising out of or in
-** connection with the use or performance of this software.
-**
-**
-** $Id: version.c,v 1.2 2002/11/25 02:15:51 bambi Exp $
+** This program is free software: you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation, either version 3 of the License, or
+** (at your option) any later version.
+** 
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU General Public License for more details.
+** 
+** You should have received a copy of the GNU General Public License
+** along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **
 */
 
-char    LIBHTTPD_VERSION[] =  "1.3",
+
+
+char    LIBHTTPD_VERSION[] =  "2.0",
         LIBHTTPD_VENDOR[] =   "Hughes Technologies Pty Ltd";
 

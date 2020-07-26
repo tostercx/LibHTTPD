@@ -1,22 +1,22 @@
 /*
-** Copyright (c) 2002  Hughes Technologies Pty Ltd.  All rights
-** reserved.
+** Copyright (c) 2017  Hughes Technologies Pty Ltd. 
 **
-** Terms under which this software may be used or copied are
-** provided in the  specific license associated with this product.
-**
-** Hughes Technologies disclaims all warranties with regard to this
-** software, including all implied warranties of merchantability and
-** fitness, in no event shall Hughes Technologies be liable for any
-** special, indirect or consequential damages or any damages whatsoever
-** resulting from loss of use, data or profits, whether in an action of
-** contract, negligence or other tortious action, arising out of or in
-** connection with the use or performance of this software.
-**
-**
-** $Id: httpd_priv.h,v 1.8 2004/09/24 06:24:50 bambi Exp $
+** This program is free software: you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation, either version 3 of the License, or
+** (at your option) any later version.
+** 
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU General Public License for more details.
+** 
+** You should have received a copy of the GNU General Public License
+** along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **
 */
+
+
 
 /*
 **  libhttpd Private Header File
@@ -53,35 +53,35 @@ extern "C" {
 
 char * _httpd_unescape __ANSI_PROTO((char*));
 char *_httpd_escape __ANSI_PROTO((char*));
-char _httpd_from_hex  __ANSI_PROTO((char));
+char _httpd_from_hex(char);
 
 
-void _httpd_catFile __ANSI_PROTO((httpd*, char*, int));
-void _httpd_send403 __ANSI_PROTO((httpd*));
-void _httpd_send304 __ANSI_PROTO((httpd*));
-void _httpd_send404 __ANSI_PROTO((httpd*));
-void _httpd_sendText __ANSI_PROTO((httpd*, char*));
-void _httpd_sendFile __ANSI_PROTO((httpd*, char*));
-void _httpd_sendStatic __ANSI_PROTO((httpd*, char*));
-void _httpd_sendHeaders __ANSI_PROTO((httpd*, int,int);)
+void _httpd_catFile __ANSI_PROTO((httpd*, httpReq*, char*, int));
+void _httpd_send403 __ANSI_PROTO((httpd*, httpReq*));
+void _httpd_send304 __ANSI_PROTO((httpd*, httpReq*));
+void _httpd_send404 __ANSI_PROTO((httpd*, httpReq*));
+void _httpd_sendText __ANSI_PROTO((httpd*, httpReq*, char*));
+void _httpd_sendFile __ANSI_PROTO((httpd*, httpReq*, char*));
+void _httpd_sendStatic __ANSI_PROTO((httpd*, httpReq*, char*));
+void _httpd_sendHeaders __ANSI_PROTO((httpd*, httpReq*, int, time_t);)
 void _httpd_sanitiseUrl __ANSI_PROTO((char*));
 void _httpd_freeVariables __ANSI_PROTO((httpVar*));
-void _httpd_formatTimeString __ANSI_PROTO((httpd*, char*, int));
-void _httpd_storeData __ANSI_PROTO((httpd*, char*));
-void _httpd_writeAccessLog __ANSI_PROTO((httpd*));
-void _httpd_writeErrorLog __ANSI_PROTO((httpd*, char*, char*));
+void _httpd_formatTimeString __ANSI_PROTO((char*, time_t));
+void _httpd_storeData __ANSI_PROTO((httpd*, httpReq*, char*));
+void _httpd_writeAccessLog __ANSI_PROTO((httpd*, httpReq*));
+void _httpd_writeErrorLog __ANSI_PROTO((httpd*, httpReq*, char*, char*));
 
 
 int _httpd_net_read __ANSI_PROTO((int, char*, int));
 int _httpd_net_write __ANSI_PROTO((int, char*, int));
-int _httpd_readBuf __ANSI_PROTO((httpd*, char*, int));
-int _httpd_readChar __ANSI_PROTO((httpd*, char*));
-int _httpd_readLine __ANSI_PROTO((httpd*, char*, int));
-int _httpd_checkLastModified __ANSI_PROTO((httpd*, int));
-int _httpd_sendDirectoryEntry __ANSI_PROTO((httpd*, httpContent*, char*));
-int _httpd_executeEmber __ANSI_PROTO((httpd*, char*));
+int _httpd_readBuf __ANSI_PROTO((httpd*, httpReq*, char*, int));
+int _httpd_readChar __ANSI_PROTO((httpd*, httpReq*, char*));
+int _httpd_readLine __ANSI_PROTO((httpd*, httpReq*, char*, int));
+int _httpd_checkLastModified __ANSI_PROTO((httpd*, httpReq*, int));
+int _httpd_sendDirectoryEntry __ANSI_PROTO((httpd*, httpReq*, httpContent*, char*));
+int _httpd_executeEmber __ANSI_PROTO((httpd*, httpReq*, char*));
 
-httpContent *_httpd_findContentEntry __ANSI_PROTO((httpd*, httpDir*, char*));
-httpDir *_httpd_findContentDir __ANSI_PROTO((httpd*, char*, int));
+httpContent *_httpd_findContentEntry __ANSI_PROTO((httpd*, httpReq*, httpDir*, char*));
+httpDir *_httpd_findContentDir __ANSI_PROTO((httpd*, httpReq*, char*, int));
 
 #endif  /* LIB_HTTPD_PRIV_H */

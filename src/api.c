@@ -1,22 +1,22 @@
 /*
-** Copyright (c) 2002  Hughes Technologies Pty Ltd.  All rights
-** reserved.
+** Copyright (c) 2017  Hughes Technologies Pty Ltd.
 **
-** Terms under which this software may be used or copied are
-** provided in the  specific license associated with this product.
-**
-** Hughes Technologies disclaims all warranties with regard to this
-** software, including all implied warranties of merchantability and
-** fitness, in no event shall Hughes Technologies be liable for any
-** special, indirect or consequential damages or any damages whatsoever
-** resulting from loss of use, data or profits, whether in an action of
-** contract, negligence or other tortious action, arising out of or in
-** connection with the use or performance of this software.
-**
-**
-** $Id: api.c,v 1.22 2005/01/26 04:48:28 bambi Exp $
+** This program is free software: you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation, either version 3 of the License, or
+** (at your option) any later version.
+** 
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU General Public License for more details.
+** 
+** You should have received a copy of the GNU General Public License
+** along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **
 */
+
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <errno.h>
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -72,30 +73,31 @@ char *httpdUrlEncode(str)
 
 
 
-char *httpdRequestMethodName(server)
-	httpd	*server;
+char *httpdRequestMethodName(request)
+	httpReq	*request;
 {
 	static	char	tmpBuf[255];
 
-	switch(server->request.method)
+	switch(request->method)
 	{
 		case HTTP_GET: return("GET");
 		case HTTP_POST: return("POST");
 		default: 
 			snprintf(tmpBuf,255,"Invalid method '%d'", 
-				server->request.method);
+				request->method);
 			return(tmpBuf);
 	}
 }
 
 
-httpVar *httpdGetVariableByName(server, name)
+httpVar *httpdGetVariableByName(server, request, name)
 	httpd	*server;
+	httpReq	*request;
 	char	*name;
 {
 	httpVar	*curVar;
 
-	curVar = server->variables;
+	curVar = request->variables;
 	while(curVar)
 	{
 		if (strcmp(curVar->name, name) == 0)
@@ -107,15 +109,16 @@ httpVar *httpdGetVariableByName(server, name)
 
 
 
-httpVar *httpdGetVariableByPrefix(server, prefix)
+httpVar *httpdGetVariableByPrefix(server, request, prefix)
 	httpd	*server;
+	httpReq	*request;
 	char	*prefix;
 {
 	httpVar	*curVar;
 
 	if (prefix == NULL)
-		return(server->variables);
-	curVar = server->variables;
+		return(request->variables);
+	curVar = request->variables;
 	while(curVar)
 	{
 		if (strncmp(curVar->name, prefix, strlen(prefix)) == 0)
@@ -126,8 +129,9 @@ httpVar *httpdGetVariableByPrefix(server, prefix)
 }
 
 
-httpVar *httpdGetVariableByPrefixedName(server, prefix, name)
+httpVar *httpdGetVariableByPrefixedName(server, request, prefix, name)
 	httpd	*server;
+	httpReq	*request;
 	char	*prefix,
 		*name;
 {
@@ -135,8 +139,8 @@ httpVar *httpdGetVariableByPrefixedName(server, prefix, name)
 	int	prefixLen;
 
 	if (prefix == NULL)
-		return(server->variables);
-	curVar = server->variables;
+		return(request->variables);
+	curVar = request->variables;
 	prefixLen = strlen(prefix);
 	while(curVar)
 	{
@@ -167,12 +171,16 @@ httpVar *httpdGetNextVariableByPrefix(curVar, prefix)
 }
 
 
-int httpdAddVariable(server, name, value)
+int httpdAddVariable(server, request, name, value)
 	httpd	*server;
+	httpReq	*request;
 	char	*name,
 		*value;
 {
 	httpVar *curVar, *lastVar, *newVar;
+
+	if (name == NULL || value == NULL)
+		return(-1);
 
 	while(*name == ' ' || *name == '\t')
 		name++;
@@ -181,7 +189,7 @@ int httpdAddVariable(server, name, value)
 	newVar->name = strdup(name);
 	newVar->value = strdup(value);
 	lastVar = NULL;
-	curVar = server->variables;
+	curVar = request->variables;
 	while(curVar)
 	{
 		if (strcmp(curVar->name, name) != 0)
@@ -201,29 +209,44 @@ int httpdAddVariable(server, name, value)
 	if (lastVar)
 		lastVar->nextVariable = newVar;
 	else
-		server->variables = newVar;
+		request->variables = newVar;
 	return(0);
 }
 
 
-int httpdSetVariableValue(server, name, value)
+int httpdSetVariableValue(server, request, name, value)
 	httpd	*server;
+	httpReq	*request;
 	char	*name,
 		*value;
 {
 	httpVar *var;
 
-	var = httpdGetVariableByName(server, name);
+	if (name == NULL || value == NULL)
+		return(-1);
+
+	var = httpdGetVariableByName(server, request, name);
 	if (var)
 	{
-		if (var->value)
-			free(var->value);
+		if (!var->value)
+		{
+			var->value = strdup(value);
+			return(0);
+		}
+
+		/*
+		** It is possible that we have been passed our existing
+		** value by the caller.  If it is then just get out of here
+		*/
+		if (var->value == value)
+			return(0);
+		free(var->value);
 		var->value = strdup(value);
 		return(0);
 	}
 	else
 	{
-		return(httpdAddVariable(server,name,value));
+		return(httpdAddVariable(server,request,name,value));
 	}
 }
 
@@ -246,9 +269,9 @@ httpd *httpdCreate(host, port)
 	bzero(new, sizeof(httpd));
 	new->port = port;
 	if (host == HTTP_ANY_ADDR)
-		new->host = HTTP_ANY_ADDR;
+		new->serverHostname = HTTP_ANY_ADDR;
 	else
-		new->host = strdup(host);
+		new->serverHostname = strdup(host);
 	new->content = (httpDir*)malloc(sizeof(httpDir));
 	bzero(new->content,sizeof(httpDir));
 	new->content->name = strdup("");
@@ -306,13 +329,17 @@ httpd *httpdCreate(host, port)
 	new->serverSock = sock;
 	bzero(&addr, sizeof(addr));
 	addr.sin_family = AF_INET;
-	if (new->host == HTTP_ANY_ADDR)
+	if (new->serverHostname == HTTP_ANY_ADDR)
 	{
 		addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	}
 	else
 	{
-		addr.sin_addr.s_addr = inet_addr(new->host);
+		addr.sin_addr.s_addr = inet_addr(new->serverHostname);
+		if(addr.sin_addr.s_addr == INADDR_NONE)
+		{
+			return(NULL);
+		}
 	}
 	addr.sin_port = htons((u_short)new->port);
 	if (bind(sock,(struct sockaddr *)&addr,sizeof(addr)) <0)
@@ -331,36 +358,76 @@ void httpdDestroy(server)
 {
 	if (server == NULL)
 		return;
-	if (server->host)
-		free(server->host);
+	if (server->serverHostname)
+		free(server->serverHostname);
 	free(server);
 }
 
 
 
-int httpdGetConnection(server, timeout)
+
+
+
+httpReq *httpdReadRequest(server, timeout, status)
 	httpd	*server;
 	struct	timeval *timeout;
+	int	*status;
 {
-	int	result;
+	int	_httpd_decode();
+	static	char	buf[HTTP_MAX_LEN];
+	int	result,
+		count,
+		inHeaders,
+		addrLen;
+	char	*cp, *cp2,
+		*tmpBuf,
+		*ipaddr;
+	httpReq	*request;
+	struct	timeval selectTimer;
 	fd_set	fds;
 	struct  sockaddr_in     addr;
-	int	addrLen;
-	char	*ipaddr;
 
+	*status = 0;
+	request = (httpReq*)malloc(sizeof(httpReq));
+	bzero(request,sizeof(httpReq));
+	if (request == NULL)
+	{
+		*status = -3;
+		return(NULL);
+	}
 	FD_ZERO(&fds);
 	FD_SET(server->serverSock, &fds);
 	result = 0;
 	while(result == 0)
 	{
-		result = select(server->serverSock + 1, &fds, 0, 0, timeout);
+		if (timeout)
+		{
+			bcopy(timeout, &selectTimer, sizeof(selectTimer));
+			result = select(server->serverSock + 1, &fds, 0, 0,
+				&selectTimer);
+		}
+		else
+		{
+			result = select(server->serverSock + 1,&fds,0,0,NULL);
+		}
 		if (result < 0)
 		{
-			return(-1);
+			free(request);
+			if (errno == EINTR)
+			{
+				*status = 0;
+			}
+			else
+			{
+				*status = -1;
+			}
+			return(NULL);
 		}
 		if (timeout != 0 && result == 0)
 		{
-			return(0);
+			/* Timeout */
+			*status = 0;
+			return(NULL);
 		}
 		if (result > 0)
 		{
@@ -369,50 +436,38 @@ int httpdGetConnection(server, timeout)
 	}
 	bzero(&addr, sizeof(addr));
 	addrLen = sizeof(addr);
-	server->clientSock = accept(server->serverSock,(struct sockaddr *)&addr,
-		&addrLen);
+	request->clientSock = accept(server->serverSock,
+		(struct sockaddr *)&addr, (u_int*)&addrLen);
 	ipaddr = inet_ntoa(addr.sin_addr);
 	if (ipaddr)
-		strncpy(server->clientAddr, ipaddr, HTTP_IP_ADDR_LEN);
+		strncpy(request->clientAddr, ipaddr, HTTP_IP_ADDR_LEN);
 	else
-		*server->clientAddr = 0;
-	server->readBufRemain = 0;
-	server->readBufPtr = NULL;
+		*request->clientAddr = 0;
+	request->readBufRemain = 0;
+	request->readBufPtr = NULL;
 
 	/*
 	** Check the default ACL
 	*/
 	if (server->defaultAcl)
 	{
-		if (httpdCheckAcl(server, server->defaultAcl) == HTTP_ACL_DENY)
+		if (httpdCheckAcl(server, request, server->defaultAcl) == 
+			HTTP_ACL_DENY)
 		{
-			httpdEndRequest(server);
-			return(-2);
+			httpdEndRequest(server, request);
+			*status = -2;
+			return(NULL);
 		}
 	}
-	return(1);
-}
-
-
-
-int httpdReadRequest(server)
-	httpd	*server;
-{
-	static	char	buf[HTTP_MAX_LEN];
-	int	count,
-		inHeaders;
-	char	*cp, *cp2;
-	int	_httpd_decode();
-
 
 	/*
 	** Setup for a standard response
 	*/
-	strcpy(server->response.headers,
+	strcpy(request->response.headers,
 		"Server: Hughes Technologies Embedded Server\n"); 
-	strcpy(server->response.contentType, "text/html");
-	strcpy(server->response.response,"200 Output Follows\n");
-	server->response.headersSent = 0;
+	strcpy(request->response.contentType, "text/html");
+	strcpy(request->response.response,"200 Output Follows\n");
+	request->response.headersSent = 0;
 
 
 	/*
@@ -420,7 +475,19 @@ int httpdReadRequest(server)
 	*/
 	count = 0;
 	inHeaders = 1;
-	while(_httpd_readLine(server, buf, HTTP_MAX_LEN) > 0)
+	if (timeout)
+	{
+		FD_ZERO(&fds);
+		FD_SET(request->clientSock, &fds);
+		bcopy(timeout, &selectTimer, sizeof(selectTimer));
+		if(select(request->clientSock + 1,&fds,0,0, &selectTimer) == 0)
+		{
+                	httpdEndRequest(server, request);
+                	*status = 0;
+                	return(NULL);
+		}
+	}
+	while(_httpd_readLine(server, request, buf, HTTP_MAX_LEN) > 0)
 	{
 		count++;
 
@@ -438,19 +505,21 @@ int httpdReadRequest(server)
 				cp2++;
 			*cp2 = 0;
 			if (strcasecmp(cp,"GET") == 0)
-				server->request.method = HTTP_GET;
+				request->method = HTTP_GET;
 			if (strcasecmp(cp,"POST") == 0)
-				server->request.method = HTTP_POST;
-			if (server->request.method == 0)
+				request->method = HTTP_POST;
+			if (request->method == 0)
 			{
-				_httpd_net_write( server->clientSock,
+				_httpd_net_write(request->clientSock,
 				      HTTP_METHOD_ERROR,
 				      strlen(HTTP_METHOD_ERROR));
-				_httpd_net_write( server->clientSock, cp, 
+				_httpd_net_write(request->clientSock, cp, 
 				      strlen(cp));
-				_httpd_writeErrorLog(server,LEVEL_ERROR, 
-					"Invalid method received");
-				return(-1);
+				_httpd_writeErrorLog(server,request,
+					LEVEL_ERROR, "Invalid method received");
+				httpdEndRequest(server, request);
+				*status = -4;
+				return(NULL);
 			}
 			cp = cp2+1;
 			while(*cp == ' ')
@@ -459,8 +528,8 @@ int httpdReadRequest(server)
 			while(*cp2 != ' ' && *cp2 != 0)
 				cp2++;
 			*cp2 = 0;
-			strncpy(server->request.path,cp,HTTP_MAX_URL);
-			_httpd_sanitiseUrl(server->request.path);
+			strncpy(request->path,cp,HTTP_MAX_URL);
+			_httpd_sanitiseUrl(request->path);
 			continue;
 		}
 
@@ -475,7 +544,7 @@ int httpdReadRequest(server)
 				** End of headers.  Continue if there's
 				** data to read
 				*/
-				if (server->request.contentLength == 0)
+				if (request->contentLength == 0)
 					break;
 				inHeaders = 0;
 				break;
@@ -496,7 +565,8 @@ int httpdReadRequest(server)
 					end = index(val,';');
 					if(end)
 						*end = 0;
-					httpdAddVariable(server, var, val);
+					httpdAddVariable(server, request, var, 
+						val);
 					var = end;
 				}
 			}
@@ -513,18 +583,16 @@ int httpdReadRequest(server)
 
 					cp = index(cp,' ') + 1;
 					_httpd_decode(cp, authBuf, 100);
-					server->request.authLength = 
-						strlen(authBuf);
+					request->authLength = strlen(authBuf);
 					cp = index(authBuf,':');
 					if (cp)
 					{
 						*cp = 0;
-						strncpy(
-						   server->request.authPassword,
+						strncpy(request->authPassword,
 						   cp+1, HTTP_MAX_AUTH);
 					}
-					strncpy(server->request.authUser, 
-						authBuf, HTTP_MAX_AUTH);
+					strncpy(request->authUser, authBuf, 
+						HTTP_MAX_AUTH);
 				}
 			}
 			if (strncasecmp(buf,"Host: ",6) == 0)
@@ -532,8 +600,7 @@ int httpdReadRequest(server)
 				cp = index(buf,':') + 2;
 				if(cp)
 				{
-					strncpy(server->request.host,cp,
-						HTTP_MAX_URL);
+					strncpy(request->host,cp, HTTP_MAX_URL);
 				}
 			}
 			if (strncasecmp(buf,"Referer: ",9) == 0)
@@ -541,7 +608,7 @@ int httpdReadRequest(server)
 				cp = index(buf,':') + 2;
 				if(cp)
 				{
-					strncpy(server->request.referer,cp,
+					strncpy(request->referer,cp,
 						HTTP_MAX_URL);
 				}
 			}
@@ -550,10 +617,9 @@ int httpdReadRequest(server)
 				cp = index(buf,':') + 2;
 				if(cp)
 				{
-					strncpy(server->request.ifModified,cp,
+					strncpy(request->ifModified,cp,
 						HTTP_MAX_URL);
-					cp = index(server->request.ifModified,
-						';');
+					cp = index(request->ifModified, ';');
 					if (cp)
 						*cp = 0;
 				}
@@ -563,7 +629,7 @@ int httpdReadRequest(server)
 				cp = index(buf,':') + 2;
 				if(cp)
 				{
-					strncpy(server->request.contentType,cp,
+					strncpy(request->contentType,cp,
 						HTTP_MAX_URL);
 				}
 			}
@@ -571,63 +637,85 @@ int httpdReadRequest(server)
 			{
 				cp = index(buf,':') + 2;
 				if(cp)
-					server->request.contentLength=atoi(cp);
+				{
+					request->contentLength=atoi(cp);
+				}
 			}
 			continue;
 		}
 	}
 
+	if (count == 0)
+	{
+		httpdEndRequest(server, request);
+		*status = 0;
+		return(NULL);
+	}
+
 	/*
 	** Process and POST data
 	*/
-	if (server->request.contentLength > 0)
+	if (request->contentLength > 0)
 	{
-		bzero(buf, HTTP_MAX_LEN);
-		_httpd_readBuf(server, buf, server->request.contentLength);
-		_httpd_storeData(server, buf);
-		
+		if (strcmp(request->contentType,"multipart/form-data") == 0)
+		{
+			/* This is a multi-part MIME encoded form submission */
+		}
+		else
+		{
+			bzero(buf, HTTP_MAX_LEN);
+			_httpd_readBuf(server, request, buf, 
+				request->contentLength);
+			_httpd_storeData(server, request, buf);
+		}
 	}
 
 	/*
 	** Process any URL data
 	*/
-	cp = index(server->request.path,'?');
+	cp = index(request->path,'?');
 	if (cp != NULL)
 	{
 		*cp = 0;
 		cp++;
-		_httpd_storeData(server, cp);
+		tmpBuf = strdup(cp);
+		tmpBuf = _httpd_unescape(tmpBuf);
+		_httpd_storeData(server, request, tmpBuf);
+		free(tmpBuf);
 	}
-	return(0);
+	return(request);
 }
 
 
-void httpdEndRequest(server)
+void httpdEndRequest(server, request)
 	httpd	*server;
+	httpReq	*request;
 {
-	_httpd_freeVariables(server->variables);
-	server->variables = NULL;
-	shutdown(server->clientSock,2);
-	close(server->clientSock);
-	bzero(&server->request, sizeof(server->request));
+	_httpd_freeVariables(request->variables);
+	request->variables = NULL;
+	shutdown(request->clientSock,2);
+	close(request->clientSock);
+	free(request);
 }
 
 
-void httpdFreeVariables(server)
+void httpdFreeVariables(server, request)
         httpd   *server;
+	httpReq	*request;
 {
-        _httpd_freeVariables(server->variables);
+        _httpd_freeVariables(request->variables);
 }
 
 
 
-void httpdDumpVariables(server)
+void httpdDumpVariables(server, request)
 	httpd	*server;
+	httpReq	*request;
 {
 	httpVar	*curVar,
 		*curVal;
 
-	curVar = server->variables;
+	curVar = request->variables;
 	while(curVar)
 	{
 		printf("Variable '%s'\n", curVar->name);
@@ -649,6 +737,23 @@ void httpdSetFileBase(server, path)
 }
 
 
+void httpdSetExternalAuthUsername(server, request, username)
+	httpd	*server;
+	httpReq	*request;
+	char	*username;
+{
+	strncpy(request->authUser, username, HTTP_MAX_AUTH);
+}
+
+
+char *httpdGetAuthUsername(server, request)
+	httpd	*server;
+	httpReq	*request;
+{
+	return(request->authUser);
+}
+
+
 int httpdAddFileContent(server, dir, name, indexFlag, preload, path)
 	httpd	*server;
 	char	*dir,
@@ -660,7 +765,7 @@ int httpdAddFileContent(server, dir, name, indexFlag, preload, path)
 	httpDir	*dirPtr;
 	httpContent *newEntry;
 
-	dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
+	dirPtr = _httpd_findContentDir(server, NULL, dir, HTTP_TRUE);
 	newEntry =  malloc(sizeof(httpContent));
 	if (newEntry == NULL)
 		return(-1);
@@ -698,7 +803,7 @@ int httpdAddWildcardContent(server, dir, preload, path)
 	httpDir	*dirPtr;
 	httpContent *newEntry;
 
-	dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
+	dirPtr = _httpd_findContentDir(server, NULL, dir, HTTP_TRUE);
 	newEntry =  malloc(sizeof(httpContent));
 	if (newEntry == NULL)
 		return(-1);
@@ -738,7 +843,7 @@ int httpdAddCContent(server, dir, name, indexFlag, preload, function)
 	httpDir	*dirPtr;
 	httpContent *newEntry;
 
-		dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
+		dirPtr = _httpd_findContentDir(server, NULL, dir, HTTP_TRUE);
 	newEntry =  malloc(sizeof(httpContent));
 	if (newEntry == NULL)
 		return(-1);
@@ -763,7 +868,7 @@ int httpdAddCWildcardContent(server, dir, preload, function)
 	httpDir	*dirPtr;
 	httpContent *newEntry;
 
-	dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
+	dirPtr = _httpd_findContentDir(server, NULL, dir, HTTP_TRUE);
 	newEntry =  malloc(sizeof(httpContent));
 	if (newEntry == NULL)
 		return(-1);
@@ -788,7 +893,7 @@ int httpdAddStaticContent(server, dir, name, indexFlag, preload, data)
 	httpDir	*dirPtr;
 	httpContent *newEntry;
 
-	dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
+	dirPtr = _httpd_findContentDir(server, NULL, dir, HTTP_TRUE);
 	newEntry =  malloc(sizeof(httpContent));
 	if (newEntry == NULL)
 		return(-1);
@@ -813,7 +918,7 @@ int httpdAddEmberContect(server, dir, name, indexFlag, preload, script)
 	httpDir	*dirPtr;
 	httpContent *newEntry;
 
-	dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
+	dirPtr = _httpd_findContentDir(server, NULL, dir, HTTP_TRUE);
 	newEntry =  malloc(sizeof(httpContent));
 	if (newEntry == NULL)
 		return(-1);
@@ -828,49 +933,69 @@ int httpdAddEmberContect(server, dir, name, indexFlag, preload, script)
 	return(0);
 }
 
-void httpdSendHeaders(server)
+void httpdSendHeaders(server, request)
 	httpd	*server;
+	httpReq	*request;
 {
-	_httpd_sendHeaders(server, 0, 0);
+	_httpd_sendHeaders(server, request, 0, 0);
 }
 
-void httpdSetResponse(server, msg)
+void httpdSetResponse(server, request, msg)
 	httpd	*server;
+	httpReq	*request;
 	char	*msg;
 {
-	strncpy(server->response.response, msg, HTTP_MAX_URL);
+	strncpy(request->response.response, msg, HTTP_MAX_URL);
 }
 
-void httpdSetContentType(server, type)
+void httpdSetContentType(server, request, type)
 	httpd	*server;
+	httpReq	*request;
 	char	*type;
 {
-	strcpy(server->response.contentType, type);
+	strcpy(request->response.contentType, type);
 }
 
 
-void httpdAddHeader(server, msg)
+void httpdAddHeader(server, request, msg)
 	httpd	*server;
+	httpReq	*request;
 	char	*msg;
 {
-	strcat(server->response.headers,msg);
+	strcat(request->response.headers,msg);
 	if (msg[strlen(msg) - 1] != '\n')
-		strcat(server->response.headers,"\n");
+		strcat(request->response.headers,"\n");
 }
 
-void httpdSetCookie(server, name, value)
+void httpdSetCookie(server, request, name, value)
 	httpd	*server;
+	httpReq	*request;
 	char	*name,
 		*value;
 {
 	char	buf[HTTP_MAX_URL];
 
 	snprintf(buf,HTTP_MAX_URL, "Set-Cookie: %s=%s; path=/;", name, value);
-	httpdAddHeader(server,buf);
+	httpdAddHeader(server,request,buf);
 }
 
-void httpdOutput(server, msg)
+
+void httpdDeleteCookie(server, request, name)
 	httpd	*server;
+	httpReq	*request;
+	char	*name;
+{
+	char	buf[HTTP_MAX_URL];
+
+	snprintf(buf,HTTP_MAX_URL, "Set-Cookie: %s=; path=/; expires=%s;",
+		name, "Thu, 01 Jan 1970 00:00:01 GMT");
+	httpdAddHeader(server,request,buf);
+}
+
+
+void httpdOutput(server, request, msg)
+	httpd	*server;
+	httpReq	*request;
 	char	*msg;
 {
 	char	buf[HTTP_MAX_LEN],
@@ -884,14 +1009,14 @@ void httpdOutput(server, msg)
 	count = 0;
 	while(*src && count < HTTP_MAX_LEN)
 	{
-		if (*src == '$')
+		if (*src == '$' && *(src+1) == '{')
 		{
 			char	*cp,
 				*tmp;
 			int	count2;
 			httpVar	*curVar;
 
-			tmp = src + 1;
+			tmp = src + 2;
 			cp = varName;
 			count2 = 0;
 			while(*tmp&&(isalnum(*tmp)||*tmp == '_')&&count2 < 80)
@@ -899,44 +1024,60 @@ void httpdOutput(server, msg)
 				*cp++ = *tmp++;
 				count2++;
 			}
-			*cp = 0;
-			curVar = httpdGetVariableByName(server,varName);
-			if (curVar)
+			if (*tmp == '}')
 			{
-				strcpy(dest, curVar->value);
-				dest = dest + strlen(dest);
-				count += strlen(dest);
+				*cp = 0;
+				curVar = httpdGetVariableByName(server,
+					request,varName);
+				if (curVar)
+				{
+					strcpy(dest, curVar->value);
+					dest = dest + strlen(dest);
+					count += strlen(dest);
+				}
+				else
+				{
+					*dest++ = '$';
+					*dest++ = '{';
+					strcpy(dest, varName);
+					dest += strlen(varName);
+					*dest++ = '}';
+					count += 3 + strlen(varName);
+				}
+				src = src + strlen(varName) + 3;
 			}
 			else
 			{
 				*dest++ = '$';
+				*dest++ = '{';
 				strcpy(dest, varName);
 				dest += strlen(varName);
-				count += 1 + strlen(varName);
+				count += 2 + strlen(varName);
+				src = src + strlen(varName) + 2;
 			}
-			src = src + strlen(varName) + 1;
 			continue;
 		}
 		*dest++ = *src++;
 		count++;
 	}	
 	*dest = 0;
-	server->response.responseLength += strlen(buf);
-	if (server->response.headersSent == 0)
-		httpdSendHeaders(server);
-	_httpd_net_write( server->clientSock, buf, strlen(buf));
+	request->response.responseLength += strlen(buf);
+	if (request->response.headersSent == 0)
+		httpdSendHeaders(server, request);
+	_httpd_net_write(request->clientSock, buf, strlen(buf));
 }
 
 
 
 #ifdef HAVE_STDARG_H
-void httpdPrintf(httpd *server, char *fmt, ...)
+void httpdPrintf(httpd* server, httpReq *request, char *fmt, ...)
 {
 #else
 void httpdPrintf(va_alist)
         va_dcl
 {
-        httpd		*server;
+	httpd		*server;
+        httpReq		*request;
         char		*fmt;
 #endif
         va_list         args;
@@ -947,20 +1088,22 @@ void httpdPrintf(va_alist)
 #else
         va_start(args);
         server = (httpd *) va_arg(args, httpd * );
+        request = (httpReq *) va_arg(args, httpReq * );
         fmt = (char *) va_arg(args, char *);
 #endif
-	if (server->response.headersSent == 0)
-		httpdSendHeaders(server);
+	if (request->response.headersSent == 0)
+		httpdSendHeaders(server, request);
 	vsnprintf(buf, HTTP_MAX_LEN, fmt, args);
-	server->response.responseLength += strlen(buf);
-	_httpd_net_write( server->clientSock, buf, strlen(buf));
+	request->response.responseLength += strlen(buf);
+	_httpd_net_write(request->clientSock, buf, strlen(buf));
 }
 
 
 
 
-void httpdProcessRequest(server)
+void httpdProcessRequest(server, request)
 	httpd	*server;
+	httpReq	*request;
 {
 	char	dirName[HTTP_MAX_URL],
 		entryName[HTTP_MAX_URL],
@@ -968,8 +1111,8 @@ void httpdProcessRequest(server)
 	httpDir	*dir;
 	httpContent *entry;
 
-	server->response.responseLength = 0;
-	strncpy(dirName, httpdRequestPath(server), HTTP_MAX_URL);
+	request->response.responseLength = 0;
+	strncpy(dirName, httpdRequestPath(request), HTTP_MAX_URL);
 	cp = rindex(dirName, '/');
 	if (cp == NULL)
 	{
@@ -981,25 +1124,25 @@ void httpdProcessRequest(server)
 		*cp = 0;
 	else
 		*(cp+1) = 0;
-	dir = _httpd_findContentDir(server, dirName, HTTP_FALSE);
+	dir = _httpd_findContentDir(server, request, dirName, HTTP_FALSE);
 	if (dir == NULL)
 	{
-		_httpd_send404(server);
-		_httpd_writeAccessLog(server);
+		_httpd_send404(server, request);
+		_httpd_writeAccessLog(server, request);
 		return;
 	}
-	entry = _httpd_findContentEntry(server, dir, entryName);
+	entry = _httpd_findContentEntry(server, request, dir, entryName);
 	if (entry == NULL)
 	{
-		_httpd_send404(server);
-		_httpd_writeAccessLog(server);
+		_httpd_send404(server, request);
+		_httpd_writeAccessLog(server, request);
 		return;
 	}
 	if (entry->preload)
 	{
-		if ((entry->preload)(server) < 0)
+		if ((entry->preload)(server, request) < 0)
 		{
-			_httpd_writeAccessLog(server);
+			_httpd_writeAccessLog(server, request);
 			return;
 		}
 	}
@@ -1007,32 +1150,33 @@ void httpdProcessRequest(server)
 	{
 		case HTTP_C_FUNCT:
 		case HTTP_C_WILDCARD:
-			(entry->function)(server);
+			(entry->function)(server, request);
 			break;
 
 #ifdef HAVE_EMBER
 		case HTTP_EMBER_FUNCT:
 		case HTTP_EMBER_WILDCARD:
-			_httpd_executeEmber(server, entry->data);
+			_httpd_executeEmber(server, request, entry->data);
 			break;
 #endif
 
 		case HTTP_STATIC:
-			_httpd_sendStatic(server, entry->data);
+			_httpd_sendStatic(server, request, entry->data);
 			break;
 
 		case HTTP_FILE:
-			httpdSendFile(server, entry->path);
+			httpdSendFile(server, request, entry->path);
 			break;
 
 		case HTTP_WILDCARD:
-			if (_httpd_sendDirectoryEntry(server,entry,entryName)<0)
+			if (_httpd_sendDirectoryEntry(server, request, entry,
+				entryName) < 0)
 			{
-				_httpd_send404(server);
+				_httpd_send404(server, request);
 			}
 			break;
 	}
-	_httpd_writeAccessLog(server);
+	_httpd_writeAccessLog(server, request);
 }
 
 void httpdSetAccessLog(server, fp)
@@ -1049,36 +1193,38 @@ void httpdSetErrorLog(server, fp)
 	server->errorLog = fp;
 }
 
-int httpdAuthenticate(server, realm)
+int httpdAuthenticate(server, request, realm)
 	httpd	*server;
+	httpReq	*request;
 	char	*realm;
 {
 	char	buffer[255];
 
-	if (server->request.authLength == 0)
+	if (request->authLength == 0)
 	{
-		httpdSetResponse(server, "401 Please Authenticate");
+		httpdSetResponse(server, request, "401 Please Authenticate");
 		snprintf(buffer,sizeof(buffer), 
 			"WWW-Authenticate: Basic realm=\"%s\"\n", realm);
-		httpdAddHeader(server, buffer);
-		httpdOutput(server,"\n");
+		httpdAddHeader(server, request, buffer);
+		httpdOutput(server, request, "\n");
 		return(0);
 	}
 	return(1);
 }
 
 
-void httpdForceAuthenticate(server, realm)
+void httpdForceAuthenticate(server, request, realm)
 	httpd	*server;
+	httpReq	*request;
 	char	*realm;
 {
 	char	buffer[255];
 
-	httpdSetResponse(server, "401 Please Authenticate");
+	httpdSetResponse(server, request, "401 Please Authenticate");
 	snprintf(buffer,sizeof(buffer), 
 		"WWW-Authenticate: Basic realm=\"%s\"\n", realm);
-	httpdAddHeader(server, buffer);
-	httpdOutput(server,"\n");
+	httpdAddHeader(server, request, buffer);
+	httpdOutput(server, request, "\n");
 }
 
 
@@ -1105,7 +1251,7 @@ int httpdSetErrorFunction(server, error, function)
 			snprintf(errBuf, 80,
 				"Invalid error code (%d) for custom callback",
 				error);
-			_httpd_writeErrorLog(server,LEVEL_ERROR, errBuf);
+			_httpd_writeErrorLog(server,NULL,LEVEL_ERROR, errBuf);
 			return(-1);
 			break;
 	}
@@ -1114,8 +1260,9 @@ int httpdSetErrorFunction(server, error, function)
 
 
 
-void httpdSendFile(server, path)
+void httpdSendFile(server, request, path)
 	httpd	*server;
+	httpReq	*request;
 	char	*path;
 {
 	char	*suffix;
@@ -1125,33 +1272,36 @@ void httpdSendFile(server, path)
 	if (suffix != NULL)
 	{
 		if (strcasecmp(suffix,".gif") == 0) 
-			strcpy(server->response.contentType,"image/gif");
+			strcpy(request->response.contentType,"image/gif");
 		if (strcasecmp(suffix,".jpg") == 0) 
-			strcpy(server->response.contentType,"image/jpeg");
+			strcpy(request->response.contentType,"image/jpeg");
 		if (strcasecmp(suffix,".xbm") == 0) 
-			strcpy(server->response.contentType,"image/xbm");
+			strcpy(request->response.contentType,"image/xbm");
 		if (strcasecmp(suffix,".png") == 0) 
-			strcpy(server->response.contentType,"image/png");
+			strcpy(request->response.contentType,"image/png");
 		if (strcasecmp(suffix,".css") == 0) 
-			strcpy(server->response.contentType,"text/css");
+			strcpy(request->response.contentType,"text/css");
+		if (strcasecmp(suffix,".json") == 0) 
+			strcpy(request->response.contentType,
+			"application/json");
 	}
 	if (stat(path, &sbuf) < 0)
 	{
-		_httpd_send404(server);
+		_httpd_send404(server, request);
 		return;
 	}
-	if (_httpd_checkLastModified(server,sbuf.st_mtime) == 0)
+	if (_httpd_checkLastModified(server,request,sbuf.st_mtime) == 0)
 	{
-		_httpd_send304(server);
+		_httpd_send304(server, request);
 	}
 	else
 	{
-		_httpd_sendHeaders(server, sbuf.st_size, sbuf.st_mtime);
+		_httpd_sendHeaders(server,request,sbuf.st_size, sbuf.st_mtime);
 
-		if (strncmp(server->response.contentType,"text/",5) == 0)
-			_httpd_catFile(server, path, HTTP_EXPAND_TEXT);
+		if (strncmp(request->response.contentType,"text/",5) == 0)
+			_httpd_catFile(server, request, path, HTTP_EXPAND_TEXT);
 		else
-			_httpd_catFile(server, path, HTTP_RAW_DATA);
+			_httpd_catFile(server, request, path, HTTP_RAW_DATA);
 	}
 }
 

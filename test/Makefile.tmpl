@@ -1,6 +1,12 @@
 CFLAGS= -g -I../src
-EXTRA_LIBS= ../src/libhttpd.a -L$(EMBER_INST_DIR)/lib $(EMBER_LIB) 
+EXTRA_LIBS= ../src/libhttpd.a -L$(EMBER_INST_DIR)/lib $(EMBER_LIB) -ldl
 
 !program test_httpd test_httpd.c
 
 test_httpd: ../src/libhttpd.a
+
+clean::
+	rm -f *.o
+
+very-clean: clean
+	rm -rf *.dSYM

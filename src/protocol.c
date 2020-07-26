@@ -1,22 +1,21 @@
 /*
-** Copyright (c) 2002  Hughes Technologies Pty Ltd.  All rights
-** reserved.
+** Copyright (c) 2017  Hughes Technologies Pty Ltd. 
 **
-** Terms under which this software may be used or copied are
-** provided in the  specific license associated with this product.
-**
-** Hughes Technologies disclaims all warranties with regard to this
-** software, including all implied warranties of merchantability and
-** fitness, in no event shall Hughes Technologies be liable for any
-** special, indirect or consequential damages or any damages whatsoever
-** resulting from loss of use, data or profits, whether in an action of
-** contract, negligence or other tortious action, arising out of or in
-** connection with the use or performance of this software.
-**
-**
-** $Id: protocol.c,v 1.14 2004/09/24 06:24:50 bambi Exp $
+** This program is free software: you can redistribute it and/or modify
+** it under the terms of the GNU General Public License as published by
+** the Free Software Foundation, either version 3 of the License, or
+** (at your option) any later version.
+** 
+** This program is distributed in the hope that it will be useful,
+** but WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+** GNU General Public License for more details.
+** 
+** You should have received a copy of the GNU General Public License
+** along with this program.  If not, see <http://www.gnu.org/licenses/>.
 **
 */
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +24,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <errno.h>
+
+#include "config.h"
 
 #if defined(_WIN32) 
 #else
@@ -32,7 +34,6 @@
 #include <sys/file.h>
 #endif
 
-#include "config.h"
 #include "httpd.h"
 #include "httpd_priv.h"
 
@@ -42,10 +43,20 @@ int _httpd_net_read(sock, buf, len)
 	char	*buf;
 	int	len;
 {
+	int	numBytes;
 #if defined(_WIN32) 
 	return( recv(sock, buf, len, 0));
 #else
-	return( read(sock, buf, len));
+	while(1)
+	{
+		numBytes = read(sock, buf, len);
+		if (numBytes == -1 && errno == EINTR)
+		{
+			continue;
+		}
+		break;
+	}
+	return(numBytes);
 #endif
 }
 
@@ -55,48 +66,65 @@ int _httpd_net_write(sock, buf, len)
 	char	*buf;
 	int	len;
 {
+	int	remain = len,
+		sent = 0,
+		offset = 0;
+
+	while(remain)
+	{
 #if defined(_WIN32) 
-	return( send(sock, buf, len, 0));
+		sent = send(sock, buf + offset, remain, 0);
 #else
-	return( write(sock, buf, len));
+		sent = write(sock, buf + offset, remain);
 #endif
+		if (sent < 0)
+		{
+			return(-1);
+		}
+		offset = offset + sent;
+		remain = remain - sent;
+	}
+	return(0);
 }
 
-int _httpd_readChar(server, cp)
+int _httpd_readChar(server, request, cp)
 	httpd	*server;
+	httpReq	*request;
 	char	*cp;
 {
-	if (server->readBufRemain == 0)
+	if (request->readBufRemain == 0)
 	{
-		bzero(server->readBuf, HTTP_READ_BUF_LEN + 1);
-		server->readBufRemain = _httpd_net_read(server->clientSock, 
-			server->readBuf, HTTP_READ_BUF_LEN);
-		if (server->readBufRemain < 1)
+		bzero(request->readBuf, HTTP_READ_BUF_LEN + 1);
+		request->readBufRemain = _httpd_net_read(request->clientSock, 
+			request->readBuf, HTTP_READ_BUF_LEN);
+		if (request->readBufRemain < 1)
 			return(0);
-		server->readBuf[server->readBufRemain] = 0;
-		server->readBufPtr = server->readBuf;
+		request->readBuf[request->readBufRemain] = 0;
+		request->readBufPtr = request->readBuf;
 	}
-	*cp = *server->readBufPtr++;
-	server->readBufRemain--;
+	*cp = *request->readBufPtr++;
+	request->readBufRemain--;
 	return(1);
 }
 
 
-int _httpd_readLine(server, destBuf, len)
+int _httpd_readLine(server, request, destBuf, len)
 	httpd	*server;
+	httpReq	*request;
 	char	*destBuf;
 	int	len;
 {
 	char	curChar,
 		*dst;
 	int	count;
+
 	
 
 	count = 0;
 	dst = destBuf;
 	while(count < len)
 	{
-		if (_httpd_readChar(server, &curChar) < 1)
+		if (_httpd_readChar(server, request, &curChar) < 1)
 			return(0);
 		if (curChar == '\n')
 		{
@@ -118,8 +146,9 @@ int _httpd_readLine(server, destBuf, len)
 }
 
 
-int _httpd_readBuf(server, destBuf, len)
+int _httpd_readBuf(server, request, destBuf, len)
 	httpd	*server;
+	httpReq	*request;
 	char	*destBuf;
 	int	len;
 {
@@ -132,7 +161,7 @@ int _httpd_readBuf(server, destBuf, len)
 	dst = destBuf;
 	while(count < len)
 	{
-		if (_httpd_readChar(server, &curChar) < 1)
+		if (_httpd_readChar(server, request, &curChar) < 1)
 			return(0);
 		*dst++ = curChar;
 		count++;
@@ -140,8 +169,9 @@ int _httpd_readBuf(server, destBuf, len)
 	return(1);
 }
 
-int _httpd_sendExpandedText(server, buf, bufLen)
+int _httpd_sendExpandedText(server, request, buf, bufLen)
 	httpd	*server;
+	httpReq	*request;
 	char	*buf;
 	int	bufLen;
 {
@@ -167,7 +197,7 @@ int _httpd_sendExpandedText(server, buf, bufLen)
 			/* 
 			** Nope.  Write the remainder and bail
 			*/
-			_httpd_net_write(server->clientSock, 
+			_httpd_net_write(request->clientSock, 
 				textStart, bufLen - offset);
 			length += bufLen - offset;
 			offset += bufLen - offset;
@@ -178,7 +208,7 @@ int _httpd_sendExpandedText(server, buf, bufLen)
 		** Looks like there could be a variable.  Send the
 		** preceeding text and check it out
 		*/
-		_httpd_net_write(server->clientSock, textStart, 
+		_httpd_net_write(request->clientSock, textStart, 
 			textEnd - textStart);
 		length += textEnd - textStart;
 		offset  += textEnd - textStart;
@@ -188,7 +218,7 @@ int _httpd_sendExpandedText(server, buf, bufLen)
 			/*
 			** Nope, false alarm.
 			*/
-			_httpd_net_write(server->clientSock, "$",1 );
+			_httpd_net_write(request->clientSock, "$",1 );
 			length += 1;
 			offset += 1;
 			textStart = textEnd + 1;
@@ -205,7 +235,7 @@ int _httpd_sendExpandedText(server, buf, bufLen)
 			/*
 			** Variable name is too long
 			*/
-			_httpd_net_write(server->clientSock, "$", 1);
+			_httpd_net_write(request->clientSock, "$", 1);
 			length += 1;
 			offset += 1;
 			textStart = textEnd + 1;
@@ -218,7 +248,7 @@ int _httpd_sendExpandedText(server, buf, bufLen)
 		bzero(varName, HTTP_MAX_VAR_NAME_LEN);
 		strncpy(varName, varStart, varEnd - varStart + 1);
 		offset += strlen(varName) + 3;
-		var = httpdGetVariableByName(server, varName);
+		var = httpdGetVariableByName(server, request, varName);
 		if (!var)
 		{
 			/*
@@ -231,7 +261,7 @@ int _httpd_sendExpandedText(server, buf, bufLen)
 		/*
 		** Write the variables value and continue
 		*/
-		_httpd_net_write(server->clientSock, var->value, 
+		_httpd_net_write(request->clientSock, var->value, 
 			strlen(var->value));
 		length += strlen(var->value);
 		textStart = varEnd + 2;
@@ -240,8 +270,9 @@ int _httpd_sendExpandedText(server, buf, bufLen)
 }
 
 
-void _httpd_writeAccessLog(server)
+void _httpd_writeAccessLog(server, request)
 	httpd	*server;
+	httpReq	*request;
 {
 	char	dateBuf[30];
 	struct 	tm *timePtr;
@@ -254,15 +285,16 @@ void _httpd_writeAccessLog(server)
 	clock = time(NULL);
 	timePtr = localtime(&clock);
 	strftime(dateBuf, 30, "%d/%b/%Y:%T %Z",  timePtr);
-	responseCode = atoi(server->response.response);
+	responseCode = atoi(request->response.response);
 	fprintf(server->accessLog, "%s - - [%s] %s \"%s\" %d %d\n", 
-		server->clientAddr, dateBuf, httpdRequestMethodName(server), 
-		httpdRequestPath(server), responseCode, 
-		server->response.responseLength);
+		request->clientAddr, dateBuf, httpdRequestMethodName(request), 
+		httpdRequestPath(request), responseCode, 
+		request->response.responseLength);
 }
 
-void _httpd_writeErrorLog(server, level, message)
+void _httpd_writeErrorLog(server, request, level, message)
 	httpd	*server;
+	httpReq	*request;
 	char	*level,
 		*message;
 {
@@ -276,10 +308,10 @@ void _httpd_writeErrorLog(server, level, message)
 	clock = time(NULL);
 	timePtr = localtime(&clock);
 	strftime(dateBuf, 30, "%a %b %d %T %Y",  timePtr);
-	if (*server->clientAddr != 0)
+	if (request && *request->clientAddr != 0)
 	{
 		fprintf(server->errorLog, "[%s] [%s] [client %s] %s\n",
-			dateBuf, level, server->clientAddr, message);
+			dateBuf, level, request->clientAddr, message);
 	}
 	else
 	{
@@ -313,7 +345,7 @@ int _httpd_decode (bufcoded, bufplain, outbufsize)
 
 	int nbytesdecoded, j;
 	register char *bufin = bufcoded;
-	register unsigned char *bufout = bufplain;
+	register unsigned char *bufout = (unsigned char *)bufplain;
 	register int nprbytes;
 
 	/*
@@ -371,8 +403,7 @@ int _httpd_decode (bufcoded, bufplain, outbufsize)
 
 
 
-char _httpd_from_hex (c)
-        char    c;
+char _httpd_from_hex(char c)
 {
     return  c >= '0' && c <= '9' ?  c - '0'
             : c >= 'A' && c <= 'F'? c - 'A' + 10
@@ -430,8 +461,9 @@ void _httpd_freeVariables(var)
 	return;
 }
 
-void _httpd_storeData(server, query)
+void _httpd_storeData(server, request, query)
 	httpd	*server;
+	httpReq	*request;
         char    *query;
 {
         char    *cp,
@@ -460,7 +492,7 @@ void _httpd_storeData(server, query)
                 {
 			*cp = 0;
 			tmpVal = _httpd_unescape(val);
-			httpdAddVariable(server, var, tmpVal);
+			httpdAddVariable(server, request, var, tmpVal);
                         cp++;
                         cp2 = var;
 			val = NULL;
@@ -486,70 +518,86 @@ void _httpd_storeData(server, query)
         }
 	*cp = 0;
 	tmpVal = _httpd_unescape(val);
-	httpdAddVariable(server, var, tmpVal);
+	httpdAddVariable(server, request, var, tmpVal);
 }
 
 
-void _httpd_formatTimeString(server, ptr, clock)
-	httpd	*server;
+void _httpd_formatTimeString(ptr, clock)
 	char	*ptr;
-	int	clock;
+	time_t	clock;
 {
+	static	char outputBuf[HTTP_TIME_STRING_LEN + 1];
 	struct 	tm *timePtr;
+	time_t	localClock;
 
 	if (clock == 0)
-		clock = time(NULL);
-	timePtr = gmtime((time_t*)&clock);
-	strftime(ptr, HTTP_TIME_STRING_LEN,"%a, %d %b %Y %T GMT",timePtr);
+	{
+		time(&localClock);
+	}
+	else
+	{
+		localClock = clock;
+	}
+	timePtr = gmtime(&localClock);
+	if (!timePtr)
+	{
+		perror("gmtime");
+	}
+	strftime(ptr, (size_t)HTTP_TIME_STRING_LEN, "%a, %d %b %Y %T GMT",
+		timePtr);
 }
 
 
-void _httpd_sendHeaders(server, contentLength, modTime)
+void _httpd_sendHeaders(server, request, contentLength, modTime)
 	httpd	*server;
-	int	contentLength,
-		modTime;
+	httpReq	*request;
+	int	contentLength;
+	time_t	modTime;
 {
 	char	tmpBuf[80],
 		timeBuf[HTTP_TIME_STRING_LEN];
+	time_t	tmpTime;
 
-	if(server->response.headersSent)
+	if(request->response.headersSent)
 		return;
 
-	server->response.headersSent = 1;
-	_httpd_net_write(server->clientSock, "HTTP/1.0 ", 9);
-	_httpd_net_write(server->clientSock, server->response.response, 
-		strlen(server->response.response));
-	_httpd_net_write(server->clientSock, server->response.headers, 
-		strlen(server->response.headers));
+	request->response.headersSent = 1;
+	_httpd_net_write(request->clientSock, "HTTP/1.0 ", 9);
+	_httpd_net_write(request->clientSock, request->response.response, 
+		strlen(request->response.response));
+	_httpd_net_write(request->clientSock, request->response.headers, 
+		strlen(request->response.headers));
 
-	_httpd_formatTimeString(server, timeBuf, 0);
-	_httpd_net_write(server->clientSock,"Date: ", 6);
-	_httpd_net_write(server->clientSock, timeBuf, strlen(timeBuf));
-	_httpd_net_write(server->clientSock, "\n", 1);
+	time(&tmpTime);
+	_httpd_formatTimeString(timeBuf, tmpTime);
+	_httpd_net_write(request->clientSock,"Date: ", 6);
+	_httpd_net_write(request->clientSock, timeBuf, strlen(timeBuf));
+	_httpd_net_write(request->clientSock, "\n", 1);
 
-	_httpd_net_write(server->clientSock, "Connection: close\n", 18);
-	_httpd_net_write(server->clientSock, "Content-Type: ", 14);
-	_httpd_net_write(server->clientSock, server->response.contentType, 
-		strlen(server->response.contentType));
-	_httpd_net_write(server->clientSock, "\n", 1);
+	_httpd_net_write(request->clientSock, "Connection: close\n", 18);
+	_httpd_net_write(request->clientSock, "Content-Type: ", 14);
+	_httpd_net_write(request->clientSock, request->response.contentType, 
+		strlen(request->response.contentType));
+	_httpd_net_write(request->clientSock, "\n", 1);
 
 	if (contentLength > 0)
 	{
-		_httpd_net_write(server->clientSock, "Content-Length: ", 16);
+		_httpd_net_write(request->clientSock, "Content-Length: ", 16);
 		snprintf(tmpBuf, sizeof(tmpBuf), "%d", contentLength);
-		_httpd_net_write(server->clientSock, tmpBuf, strlen(tmpBuf));
-		_httpd_net_write(server->clientSock, "\n", 1);
+		_httpd_net_write(request->clientSock, tmpBuf, strlen(tmpBuf));
+		_httpd_net_write(request->clientSock, "\n", 1);
 
-		_httpd_formatTimeString(server, timeBuf, modTime);
-		_httpd_net_write(server->clientSock, "Last-Modified: ", 15);
-		_httpd_net_write(server->clientSock, timeBuf, strlen(timeBuf));
-		_httpd_net_write(server->clientSock, "\n", 1);
+		_httpd_formatTimeString(timeBuf, modTime);
+		_httpd_net_write(request->clientSock, "Last-Modified: ", 15);
+		_httpd_net_write(request->clientSock, timeBuf, strlen(timeBuf));
+		_httpd_net_write(request->clientSock, "\n", 1);
 	}
-	_httpd_net_write(server->clientSock, "\n", 1);
+	_httpd_net_write(request->clientSock, "\n", 1);
 }
 
-httpDir *_httpd_findContentDir(server, dir, createFlag)
+httpDir *_httpd_findContentDir(server, request, dir, createFlag)
 	httpd	*server;
+	httpReq	*request;
 	char	*dir;
 	int	createFlag;
 {
@@ -592,8 +640,9 @@ httpDir *_httpd_findContentDir(server, dir, createFlag)
 }
 
 
-httpContent *_httpd_findContentEntry(server, dir, entryName)
+httpContent *_httpd_findContentEntry(server, request, dir, entryName)
 	httpd	*server;
+	httpReq	*request;
 	httpDir	*dir;
 	char	*entryName;
 {
@@ -612,73 +661,77 @@ httpContent *_httpd_findContentEntry(server, dir, entryName)
 		curEntry = curEntry->next;
 	}
 	if (curEntry)
-		server->response.content = curEntry;
+		request->response.content = curEntry;
 	return(curEntry);
 }
 
 
-void _httpd_send304(server)
+void _httpd_send304(server, request)
 	httpd	*server;
+	httpReq	*request;
 {
-	httpdSetResponse(server, "304 Not Modified\n");
+	httpdSetResponse(server, request, "304 Not Modified\n");
 	if (server->errorFunction304)
 	{
-		(server->errorFunction304)(server,304);
+		(server->errorFunction304)(server,request,304);
 	}
 	else
 	{
-		_httpd_sendHeaders(server,0,0);
+		_httpd_sendHeaders(server, request,0,0);
 	}
 }
 
 
-void _httpd_send403(server)
+void _httpd_send403(server, request)
 	httpd	*server;
+	httpReq	*request;
 {
-	httpdSetResponse(server, "403 Permission Denied\n");
+	httpdSetResponse(server, request, "403 Permission Denied\n");
 	if (server->errorFunction403)
 	{
-		(server->errorFunction403)(server,403);
+		(server->errorFunction403)(server,request,403);
 	}
 	else
 	{
-		_httpd_sendHeaders(server,0,0);
-		_httpd_sendText(server,
+		_httpd_sendHeaders(server, request, 0, 0);
+		_httpd_sendText(server, request,
 		"<HTML><HEAD><TITLE>403 Permission Denied</TITLE></HEAD>\n");
-		_httpd_sendText(server,
+		_httpd_sendText(server, request,
 		"<BODY><H1>Access to the request URL was denied!</H1>\n");
 	}
 }
 
 
-void _httpd_send404(server)
+void _httpd_send404(server, request)
 	httpd	*server;
+	httpReq	*request;
 {
 	char	msg[HTTP_MAX_URL];
 
 
 	snprintf(msg, HTTP_MAX_URL,
-		"File does not exist: %s", server->request.path);
-	_httpd_writeErrorLog(server,LEVEL_ERROR, msg);
-	httpdSetResponse(server, "404 Not Found\n");
+		"File does not exist: %s", request->path);
+	_httpd_writeErrorLog(server, request, LEVEL_ERROR, msg);
+	httpdSetResponse(server, request, "404 Not Found\n");
 	if (server->errorFunction404)
 	{
-		(server->errorFunction404)(server,404);
+		(server->errorFunction404)(server,request,404);
 	}
 	else
 	{
-		_httpd_sendHeaders(server,0,0);
-		_httpd_sendText(server,
+		_httpd_sendHeaders(server, request,0,0);
+		_httpd_sendText(server, request,
 			"<HTML><HEAD><TITLE>404 Not Found</TITLE></HEAD>\n");
-		_httpd_sendText(server,
+		_httpd_sendText(server, request,
 			"<BODY><H1>The request URL was not found!</H1>\n");
-		_httpd_sendText(server, "</BODY></HTML>\n");
+		_httpd_sendText(server, request, "</BODY></HTML>\n");
 	}
 }
 
 
-void _httpd_catFile(server, path, mode)
+void _httpd_catFile(server, request, path, mode)
 	httpd	*server;
+	httpReq	*request;
 	char	*path;
 	int	mode;
 {
@@ -695,14 +748,15 @@ void _httpd_catFile(server, path, mode)
 	{
 		if (mode == HTTP_RAW_DATA)
 		{
-			server->response.responseLength += readLen;
-			_httpd_net_write(server->clientSock, buf, readLen);
+			request->response.responseLength += readLen;
+			_httpd_net_write(request->clientSock, buf, readLen);
 		}
 		else
 		{
 			buf[readLen] = 0;
-			writeLen = _httpd_sendExpandedText(server,buf,readLen);
-			server->response.responseLength += writeLen;
+			writeLen = _httpd_sendExpandedText(server,request, buf,
+				readLen);
+			request->response.responseLength += writeLen;
 		}
 		readLen = read(fd, buf, HTTP_MAX_LEN - 1);
 	}
@@ -710,22 +764,24 @@ void _httpd_catFile(server, path, mode)
 }
 
 
-void _httpd_sendStatic(server, data)
+void _httpd_sendStatic(server, request, data)
 	httpd	*server;
+	httpReq	*request;
 	char	*data;
 {
-	if (_httpd_checkLastModified(server,server->startTime) == 0)
+	if (_httpd_checkLastModified(server, request, server->startTime) == 0)
 	{
-		_httpd_send304(server);
+		_httpd_send304(server, request);
 	}
-	_httpd_sendHeaders(server, server->startTime, strlen(data));
-	httpdOutput(server, data);
+	_httpd_sendHeaders(server, request, strlen(data), server->startTime);
+	httpdOutput(server, request, data);
 }
 
 
 
-void _httpd_sendFile(server, path)
+void _httpd_sendFile(server, request, path)
 	httpd	*server;
+	httpReq	*request;
 	char	*path;
 {
 	char	*suffix;
@@ -735,67 +791,69 @@ void _httpd_sendFile(server, path)
 	if (suffix != NULL)
 	{
 		if (strcasecmp(suffix,".gif") == 0) 
-			strcpy(server->response.contentType,"image/gif");
+			strcpy(request->response.contentType,"image/gif");
 		if (strcasecmp(suffix,".jpg") == 0) 
-			strcpy(server->response.contentType,"image/jpeg");
+			strcpy(request->response.contentType,"image/jpeg");
 		if (strcasecmp(suffix,".xbm") == 0) 
-			strcpy(server->response.contentType,"image/xbm");
+			strcpy(request->response.contentType,"image/xbm");
 		if (strcasecmp(suffix,".png") == 0) 
-			strcpy(server->response.contentType,"image/png");
+			strcpy(request->response.contentType,"image/png");
 		if (strcasecmp(suffix,".css") == 0) 
-			strcpy(server->response.contentType,"text/css");
+			strcpy(request->response.contentType,"text/css");
 	}
 	if (stat(path, &sbuf) < 0)
 	{
-		_httpd_send404(server);
+		_httpd_send404(server, request);
 		return;
 	}
-	if (_httpd_checkLastModified(server,sbuf.st_mtime) == 0)
+	if (_httpd_checkLastModified(server,request,sbuf.st_mtime) == 0)
 	{
-		_httpd_send304(server);
+		_httpd_send304(server, request);
 	}
 	else
 	{
-		_httpd_sendHeaders(server, sbuf.st_size, sbuf.st_mtime);
-
-		if (strncmp(server->response.contentType,"text/",5) == 0)
-			_httpd_catFile(server, path, HTTP_EXPAND_TEXT);
+		_httpd_sendHeaders(server, request, sbuf.st_size,sbuf.st_mtime);
+		if (strncmp(request->response.contentType,"text/",5) == 0)
+			_httpd_catFile(server, request, path, HTTP_EXPAND_TEXT);
 		else
-			_httpd_catFile(server, path, HTTP_RAW_DATA);
+			_httpd_catFile(server, request, path, HTTP_RAW_DATA);
 	}
 }
 
 
-int _httpd_sendDirectoryEntry(server, entry, entryName)
+int _httpd_sendDirectoryEntry(server, request, entry, entryName)
 	httpd		*server;
+	httpReq		*request;
 	httpContent	*entry;
 	char		*entryName;
 {
 	char		path[HTTP_MAX_URL];
 
 	snprintf(path, HTTP_MAX_URL, "%s/%s", entry->path, entryName);
-	_httpd_sendFile(server,path);
+	_httpd_sendFile(server, request, path);
 	return(0);
 }
 
 
-void _httpd_sendText(server, msg)
+void _httpd_sendText(server, request, msg)
 	httpd	*server;
+	httpReq	*request;
 	char	*msg;
 {
-	server->response.responseLength += strlen(msg);
-	_httpd_net_write(server->clientSock,msg,strlen(msg));
+	request->response.responseLength += strlen(msg);
+	_httpd_net_write(request->clientSock,msg,strlen(msg));
 }
 
 
-int _httpd_checkLastModified(server, modTime)
+int _httpd_checkLastModified(server, request, modTime)
 	httpd	*server;
+	httpReq	*request;
 	int	modTime;
 {
 	char 	timeBuf[HTTP_TIME_STRING_LEN];
 
-	_httpd_formatTimeString(server, timeBuf, modTime);
-	if (strcmp(timeBuf, server->request.ifModified) == 0)
+	_httpd_formatTimeString(timeBuf, modTime);
+	if (strcmp(timeBuf, request->ifModified) == 0)
 		return(0);
 	return(1);
 }
