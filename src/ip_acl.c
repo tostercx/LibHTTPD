@@ -14,15 +14,20 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: ip_acl.c,v 1.2 2002/10/10 06:03:22 bambi Exp $
+** $Id: ip_acl.c,v 1.3 2002/11/25 02:15:51 bambi Exp $
 **
 */
 
+#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
+
+#if defined(_WIN32)
+#else
+#include <unistd.h>
+#endif
 
 #include "httpd.h"
 #include "httpd_priv.h"
@@ -129,8 +134,8 @@ static int _isInCidrBlock(server, addr1, len1, addr2, len2)
 httpAcl *httpdAddAcl(server, acl, cidr, action)
 	httpd	*server;
 	httpAcl	*acl;
-	char	*cidr,
-		action;
+        char	*cidr;
+	int	action;
 {
 	httpAcl	*cur;
 	int	addr,

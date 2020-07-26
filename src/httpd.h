@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: httpd.h,v 1.9 2002/10/10 06:03:22 bambi Exp $
+** $Id: httpd.h,v 1.10 2002/11/25 02:15:51 bambi Exp $
 **
 */
 
@@ -32,10 +32,12 @@
 
 #define LIB_HTTPD_H 1
 
-#if defined(__STDC__) || defined(__cplusplus)
+#if !defined(__ANSI_PROTO)
+#if defined(_WIN32) || defined(__STDC__) || defined(__cplusplus)
 #  define __ANSI_PROTO(x)       x
 #else
 #  define __ANSI_PROTO(x)       ()
+#endif
 #endif
 
 #ifdef __cplusplus

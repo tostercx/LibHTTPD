@@ -14,14 +14,21 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: test_httpd.c,v 1.9 2002/10/09 23:19:14 bambi Exp $
+** $Id: test_httpd.c,v 1.10 2002/11/25 02:26:58 bambi Exp $
 **
 */
 
+#include "config.h"
 
 #include <stdio.h>
 #include <unistd.h>
-#include <sys/time.h>
+
+#ifdef _WIN32
+#  include <getopt.h>
+#else
+#  include <sys/time.h>
+#endif
+
 #include "httpd.h"
 
 /*

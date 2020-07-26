@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: httpd_priv.h,v 1.4 2002/10/10 06:03:22 bambi Exp $
+** $Id: httpd_priv.h,v 1.5 2002/11/25 02:15:51 bambi Exp $
 **
 */
 
@@ -32,10 +32,12 @@
 
 #define LIB_HTTPD_H_PRIV 1
 
-#if defined(__STDC__) || defined(__cplusplus)
+#if !defined(__ANSI_PROTO)
+#if defined(_WIN32) || defined(__STDC__) || defined(__cplusplus)
 #  define __ANSI_PROTO(x)       x
 #else
 #  define __ANSI_PROTO(x)       ()
+#endif
 #endif
 
 #ifdef __cplusplus
@@ -66,6 +68,8 @@ void _httpd_writeAccessLog __ANSI_PROTO((httpd*));
 void _httpd_writeErrorLog __ANSI_PROTO((httpd*, char*, char*));
 
 
+int _httpd_net_read __ANSI_PROTO((int, char*, int));
+int _httpd_net_write __ANSI_PROTO((int, char*, int));
 int _httpd_readBuf __ANSI_PROTO((httpd*, char*, int));
 int _httpd_readChar __ANSI_PROTO((httpd*, char*));
 int _httpd_readLine __ANSI_PROTO((httpd*, char*, int));

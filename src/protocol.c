@@ -14,24 +14,53 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: protocol.c,v 1.8 2002/10/15 23:37:17 bambi Exp $
+** $Id: protocol.c,v 1.9 2002/11/25 02:15:51 bambi Exp $
 **
 */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 #include <ctype.h>
 #include <sys/types.h>
-#include <sys/file.h>
 #include <sys/stat.h>
 #include <time.h>
+
+#if defined(_WIN32) 
+#else
+#include <unistd.h>
+#include <sys/file.h>
+#endif
 
 #include "config.h"
 #include "httpd.h"
 #include "httpd_priv.h"
 
+
+int _httpd_net_read(sock, buf, len)
+	int	sock;
+	char	*buf;
+	int	len;
+{
+#if defined(_WIN32) 
+	return( recv(sock, buf, len, 0));
+#else
+	return( read(sock, buf, len));
+#endif
+}
+
+
+int _httpd_net_write(sock, buf, len)
+	int	sock;
+	char	*buf;
+	int	len;
+{
+#if defined(_WIN32) 
+	return( send(sock, buf, len, 0));
+#else
+	return( write(sock, buf, len));
+#endif
+}
 
 int _httpd_readChar(server, cp)
 	httpd	*server;
@@ -40,7 +69,7 @@ int _httpd_readChar(server, cp)
 	if (server->readBufRemain == 0)
 	{
 		bzero(server->readBuf, HTTP_READ_BUF_LEN + 1);
-		server->readBufRemain = read(server->clientSock, 
+		server->readBufRemain = _httpd_net_read(server->clientSock, 
 			server->readBuf, HTTP_READ_BUF_LEN);
 		if (server->readBufRemain < 1)
 			return(0);
@@ -387,36 +416,36 @@ void _httpd_sendHeaders(server, contentLength, modTime)
 		return;
 
 	server->response.headersSent = 1;
-	write(server->clientSock, "HTTP/1.0 ", 9);
-	write(server->clientSock, server->response.response, 
+	_httpd_net_write(server->clientSock, "HTTP/1.0 ", 9);
+	_httpd_net_write(server->clientSock, server->response.response, 
 		strlen(server->response.response));
-	write(server->clientSock, server->response.headers, 
+	_httpd_net_write(server->clientSock, server->response.headers, 
 		strlen(server->response.headers));
 
 	_httpd_formatTimeString(server, timeBuf, 0);
-	write(server->clientSock,"Date: ", 6);
-	write(server->clientSock, timeBuf, strlen(timeBuf));
-	write(server->clientSock, "\n", 1);
+	_httpd_net_write(server->clientSock,"Date: ", 6);
+	_httpd_net_write(server->clientSock, timeBuf, strlen(timeBuf));
+	_httpd_net_write(server->clientSock, "\n", 1);
 
-	write(server->clientSock, "Connection: close\n", 18);
-	write(server->clientSock, "Content-Type: ", 14);
-	write(server->clientSock, server->response.contentType, 
+	_httpd_net_write(server->clientSock, "Connection: close\n", 18);
+	_httpd_net_write(server->clientSock, "Content-Type: ", 14);
+	_httpd_net_write(server->clientSock, server->response.contentType, 
 		strlen(server->response.contentType));
-	write(server->clientSock, "\n", 1);
+	_httpd_net_write(server->clientSock, "\n", 1);
 
 	if (contentLength > 0)
 	{
-		write(server->clientSock, "Content-Length: ", 16);
+		_httpd_net_write(server->clientSock, "Content-Length: ", 16);
 		snprintf(tmpBuf, sizeof(tmpBuf), "%d", contentLength);
-		write(server->clientSock, tmpBuf, strlen(tmpBuf));
-		write(server->clientSock, "\n", 1);
+		_httpd_net_write(server->clientSock, tmpBuf, strlen(tmpBuf));
+		_httpd_net_write(server->clientSock, "\n", 1);
 
 		_httpd_formatTimeString(server, timeBuf, modTime);
-		write(server->clientSock, "Last-Modified: ", 15);
-		write(server->clientSock, timeBuf, strlen(timeBuf));
-		write(server->clientSock, "\n", 1);
+		_httpd_net_write(server->clientSock, "Last-Modified: ", 15);
+		_httpd_net_write(server->clientSock, timeBuf, strlen(timeBuf));
+		_httpd_net_write(server->clientSock, "\n", 1);
 	}
-	write(server->clientSock, "\n", 1);
+	_httpd_net_write(server->clientSock, "\n", 1);
 }
 
 httpDir *_httpd_findContentDir(server, dir, createFlag)
@@ -429,7 +458,7 @@ httpDir *_httpd_findContentDir(server, dir, createFlag)
 	httpDir	*curItem,
 		*curChild;
 
-	strcpy(buffer, dir);
+	strncpy(buffer, dir, HTTP_MAX_URL);
 	curItem = server->content;
 	curDir = strtok(buffer,"/");
 	while(curDir)
@@ -541,7 +570,7 @@ void _httpd_catFile(server, path)
 	while(len > 0)
 	{
 		server->response.responseLength += len;
-		write(server->clientSock, buf, len);
+		_httpd_net_write(server->clientSock, buf, len);
 		len = read(fd, buf, HTTP_MAX_LEN);
 	}
 	close(fd);
@@ -616,7 +645,7 @@ void _httpd_sendText(server, msg)
 	char	*msg;
 {
 	server->response.responseLength += strlen(msg);
-	write(server->clientSock,msg,strlen(msg));
+	_httpd_net_write(server->clientSock,msg,strlen(msg));
 }
 
 

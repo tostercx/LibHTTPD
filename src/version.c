@@ -14,10 +14,10 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: version.c,v 1.1 2002/10/09 23:19:14 bambi Exp $
+** $Id: version.c,v 1.2 2002/11/25 02:15:51 bambi Exp $
 **
 */
 
-char    LIBHTTPD_VERSION[] =  "1.2",
+char    LIBHTTPD_VERSION[] =  "1.3",
         LIBHTTPD_VENDOR[] =   "Hughes Technologies Pty Ltd";
 

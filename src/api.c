@@ -14,23 +14,29 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: api.c,v 1.12 2002/10/16 00:36:34 bambi Exp $
+** $Id: api.c,v 1.16 2002/11/25 02:15:51 bambi Exp $
 **
 */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 #include <ctype.h>
 #include <sys/types.h>
-#include <sys/file.h>
 #include <sys/stat.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
 #include <time.h>
+
+#if defined(_WIN32)
+#include <winsock2.h>
+#else
+#include <unistd.h> 
+#include <sys/file.h>
+#include <netinet/in.h> 
+#include <arpa/inet.h> 
+#include <netdb.h>
+#include <sys/socket.h> 
+#include <netdb.h>
+#endif
 
 #include "config.h"
 #include "httpd.h"
@@ -227,6 +233,43 @@ httpd *httpdCreate(host, port)
 	/*
 	** Setup the socket
 	*/
+#ifdef _WIN32
+	{ 
+	WORD 	wVersionRequested;
+	WSADATA wsaData;
+	int 	err;
+
+	wVersionRequested = MAKEWORD( 2, 2 );
+
+	err = WSAStartup( wVersionRequested, &wsaData );
+	
+	/* Found a usable winsock dll? */
+	if( err != 0 ) 
+	   return NULL;
+
+	/* 
+	** Confirm that the WinSock DLL supports 2.2.
+	** Note that if the DLL supports versions greater 
+	** than 2.2 in addition to 2.2, it will still return
+	** 2.2 in wVersion since that is the version we
+	** requested.
+	*/
+
+	if( LOBYTE( wsaData.wVersion ) != 2 || 
+	    HIBYTE( wsaData.wVersion ) != 2 ) {
+
+		/* 
+		** Tell the user that we could not find a usable
+		** WinSock DLL.
+		*/
+		WSACleanup( );
+		return NULL;
+	}
+
+	/* The WinSock DLL is acceptable. Proceed. */
+ 	}
+#endif
+
 	sock = socket(AF_INET, SOCK_STREAM, 0);
 	if (sock  < 0)
 	{
@@ -377,9 +420,11 @@ int httpdReadRequest(server)
 				server->request.method = HTTP_POST;
 			if (server->request.method == 0)
 			{
-				write(server->clientSock,HTTP_METHOD_ERROR,
-					strlen(HTTP_METHOD_ERROR));
-				write(server->clientSock,cp, strlen(cp));
+				_httpd_net_write( server->clientSock,
+				      HTTP_METHOD_ERROR,
+				      strlen(HTTP_METHOD_ERROR));
+				_httpd_net_write( server->clientSock, cp, 
+				      strlen(cp));
 				_httpd_writeErrorLog(server,LEVEL_ERROR, 
 					"Invalid method received");
 				return(-1);
@@ -391,7 +436,7 @@ int httpdReadRequest(server)
 			while(*cp2 != ' ' && *cp2 != 0)
 				cp2++;
 			*cp2 = 0;
-			strcpy(server->request.path,cp);
+			strncpy(server->request.path,cp,HTTP_MAX_URL);
 			_httpd_sanitiseUrl(server->request.path);
 			continue;
 		}
@@ -736,7 +781,7 @@ void httpdSetResponse(server, msg)
 	httpd	*server;
 	char	*msg;
 {
-	strcpy(server->response.response, msg);
+	strncpy(server->response.response, msg, HTTP_MAX_URL);
 }
 
 void httpdSetContentType(server, type)
@@ -822,7 +867,7 @@ void httpdOutput(server, msg)
 	server->response.responseLength += strlen(buf);
 	if (server->response.headersSent == 0)
 		httpdSendHeaders(server);
-	write(server->clientSock, buf, strlen(buf));
+	_httpd_net_write( server->clientSock, buf, strlen(buf));
 }
 
 
@@ -851,7 +896,7 @@ void httpdPrintf(va_alist)
 		httpdSendHeaders(server);
 	vsnprintf(buf, HTTP_MAX_LEN, fmt, args);
 	server->response.responseLength += strlen(buf);
-	write(server->clientSock, buf, strlen(buf));
+	_httpd_net_write( server->clientSock, buf, strlen(buf));
 }
 
 
@@ -867,14 +912,14 @@ void httpdProcessRequest(server)
 	httpContent *entry;
 
 	server->response.responseLength = 0;
-	strcpy(dirName, httpdRequestPath(server));
+	strncpy(dirName, httpdRequestPath(server), HTTP_MAX_URL);
 	cp = rindex(dirName, '/');
 	if (cp == NULL)
 	{
 		printf("Invalid request path '%s'\n",dirName);
 		return;
 	}
-	strcpy(entryName, cp + 1);
+	strncpy(entryName, cp + 1, HTTP_MAX_URL);
 	if (cp != dirName)
 		*cp = 0;
 	else
