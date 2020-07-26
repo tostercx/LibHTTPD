@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: httpd_priv.h,v 1.5 2002/11/25 02:15:51 bambi Exp $
+** $Id: httpd_priv.h,v 1.8 2004/09/24 06:24:50 bambi Exp $
 **
 */
 
@@ -48,13 +48,17 @@ extern "C" {
 #define	LEVEL_NOTICE	"notice"
 #define LEVEL_ERROR	"error"
 
+#define HTTP_EXPAND_TEXT	1
+#define HTTP_RAW_DATA		2
+
 char * _httpd_unescape __ANSI_PROTO((char*));
 char *_httpd_escape __ANSI_PROTO((char*));
 char _httpd_from_hex  __ANSI_PROTO((char));
 
 
-void _httpd_catFile __ANSI_PROTO((httpd*, char*));
+void _httpd_catFile __ANSI_PROTO((httpd*, char*, int));
 void _httpd_send403 __ANSI_PROTO((httpd*));
+void _httpd_send304 __ANSI_PROTO((httpd*));
 void _httpd_send404 __ANSI_PROTO((httpd*));
 void _httpd_sendText __ANSI_PROTO((httpd*, char*));
 void _httpd_sendFile __ANSI_PROTO((httpd*, char*));
@@ -75,6 +79,7 @@ int _httpd_readChar __ANSI_PROTO((httpd*, char*));
 int _httpd_readLine __ANSI_PROTO((httpd*, char*, int));
 int _httpd_checkLastModified __ANSI_PROTO((httpd*, int));
 int _httpd_sendDirectoryEntry __ANSI_PROTO((httpd*, httpContent*, char*));
+int _httpd_executeEmber __ANSI_PROTO((httpd*, char*));
 
 httpContent *_httpd_findContentEntry __ANSI_PROTO((httpd*, httpDir*, char*));
 httpDir *_httpd_findContentDir __ANSI_PROTO((httpd*, char*, int));

@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: protocol.c,v 1.9 2002/11/25 02:15:51 bambi Exp $
+** $Id: protocol.c,v 1.14 2004/09/24 06:24:50 bambi Exp $
 **
 */
 
@@ -139,6 +139,106 @@ int _httpd_readBuf(server, destBuf, len)
 	}
 	return(1);
 }
+
+int _httpd_sendExpandedText(server, buf, bufLen)
+	httpd	*server;
+	char	*buf;
+	int	bufLen;
+{
+	char	*textStart,
+		*textEnd,
+		*varStart,
+		*varEnd,
+		varName[HTTP_MAX_VAR_NAME_LEN + 1];
+	int	length,
+		offset;
+	httpVar	*var;
+
+	length = offset = 0;
+	textStart = buf;
+	while(offset < bufLen)
+	{
+		/*
+		** Look for the start of a variable name 
+		*/
+		textEnd = index(textStart,'$');
+		if (!textEnd)
+		{
+			/* 
+			** Nope.  Write the remainder and bail
+			*/
+			_httpd_net_write(server->clientSock, 
+				textStart, bufLen - offset);
+			length += bufLen - offset;
+			offset += bufLen - offset;
+			break;
+		}
+
+		/*
+		** Looks like there could be a variable.  Send the
+		** preceeding text and check it out
+		*/
+		_httpd_net_write(server->clientSock, textStart, 
+			textEnd - textStart);
+		length += textEnd - textStart;
+		offset  += textEnd - textStart;
+		varEnd = index(textEnd, '}');
+		if (*(textEnd + 1) != '{' || varEnd == NULL)
+		{
+			/*
+			** Nope, false alarm.
+			*/
+			_httpd_net_write(server->clientSock, "$",1 );
+			length += 1;
+			offset += 1;
+			textStart = textEnd + 1;
+			continue;
+		}
+
+		/*
+		** OK, looks like an embedded variable
+		*/
+		varStart = textEnd + 2;
+		varEnd = varEnd - 1;
+		if (varEnd - varStart > HTTP_MAX_VAR_NAME_LEN)
+		{
+			/*
+			** Variable name is too long
+			*/
+			_httpd_net_write(server->clientSock, "$", 1);
+			length += 1;
+			offset += 1;
+			textStart = textEnd + 1;
+			continue;
+		}
+
+		/*
+		** Is this a known variable?
+		*/
+		bzero(varName, HTTP_MAX_VAR_NAME_LEN);
+		strncpy(varName, varStart, varEnd - varStart + 1);
+		offset += strlen(varName) + 3;
+		var = httpdGetVariableByName(server, varName);
+		if (!var)
+		{
+			/*
+			** Nope.  It's undefined.  Ignore it
+			*/
+			textStart = varEnd + 2;
+			continue;
+		}
+
+		/*
+		** Write the variables value and continue
+		*/
+		_httpd_net_write(server->clientSock, var->value, 
+			strlen(var->value));
+		length += strlen(var->value);
+		textStart = varEnd + 2;
+	}
+	return(length);
+}
+
 
 void _httpd_writeAccessLog(server)
 	httpd	*server;
@@ -521,7 +621,14 @@ void _httpd_send304(server)
 	httpd	*server;
 {
 	httpdSetResponse(server, "304 Not Modified\n");
-	_httpd_sendHeaders(server,0,0);
+	if (server->errorFunction304)
+	{
+		(server->errorFunction304)(server,304);
+	}
+	else
+	{
+		_httpd_sendHeaders(server,0,0);
+	}
 }
 
 
@@ -529,11 +636,18 @@ void _httpd_send403(server)
 	httpd	*server;
 {
 	httpdSetResponse(server, "403 Permission Denied\n");
-	_httpd_sendHeaders(server,0,0);
-	_httpd_sendText(server,
+	if (server->errorFunction403)
+	{
+		(server->errorFunction403)(server,403);
+	}
+	else
+	{
+		_httpd_sendHeaders(server,0,0);
+		_httpd_sendText(server,
 		"<HTML><HEAD><TITLE>403 Permission Denied</TITLE></HEAD>\n");
-	_httpd_sendText(server,
+		_httpd_sendText(server,
 		"<BODY><H1>Access to the request URL was denied!</H1>\n");
+	}
 }
 
 
@@ -542,36 +656,55 @@ void _httpd_send404(server)
 {
 	char	msg[HTTP_MAX_URL];
 
+
 	snprintf(msg, HTTP_MAX_URL,
 		"File does not exist: %s", server->request.path);
 	_httpd_writeErrorLog(server,LEVEL_ERROR, msg);
 	httpdSetResponse(server, "404 Not Found\n");
-	_httpd_sendHeaders(server,0,0);
-	_httpd_sendText(server,
-		"<HTML><HEAD><TITLE>404 Not Found</TITLE></HEAD>\n");
-	_httpd_sendText(server,
-		"<BODY><H1>The request URL was not found!</H1>\n");
-	_httpd_sendText(server, "</BODY></HTML>\n");
+	if (server->errorFunction404)
+	{
+		(server->errorFunction404)(server,404);
+	}
+	else
+	{
+		_httpd_sendHeaders(server,0,0);
+		_httpd_sendText(server,
+			"<HTML><HEAD><TITLE>404 Not Found</TITLE></HEAD>\n");
+		_httpd_sendText(server,
+			"<BODY><H1>The request URL was not found!</H1>\n");
+		_httpd_sendText(server, "</BODY></HTML>\n");
+	}
 }
 
 
-void _httpd_catFile(server, path)
+void _httpd_catFile(server, path, mode)
 	httpd	*server;
 	char	*path;
+	int	mode;
 {
 	int	fd,
-		len;
+		readLen,
+		writeLen;
 	char	buf[HTTP_MAX_LEN];
 
 	fd = open(path,O_RDONLY);
 	if (fd < 0)
 		return;
-	len = read(fd, buf, HTTP_MAX_LEN);
-	while(len > 0)
+	readLen = read(fd, buf, HTTP_MAX_LEN - 1);
+	while(readLen > 0)
 	{
-		server->response.responseLength += len;
-		_httpd_net_write(server->clientSock, buf, len);
-		len = read(fd, buf, HTTP_MAX_LEN);
+		if (mode == HTTP_RAW_DATA)
+		{
+			server->response.responseLength += readLen;
+			_httpd_net_write(server->clientSock, buf, readLen);
+		}
+		else
+		{
+			buf[readLen] = 0;
+			writeLen = _httpd_sendExpandedText(server,buf,readLen);
+			server->response.responseLength += writeLen;
+		}
+		readLen = read(fd, buf, HTTP_MAX_LEN - 1);
 	}
 	close(fd);
 }
@@ -609,6 +742,8 @@ void _httpd_sendFile(server, path)
 			strcpy(server->response.contentType,"image/xbm");
 		if (strcasecmp(suffix,".png") == 0) 
 			strcpy(server->response.contentType,"image/png");
+		if (strcasecmp(suffix,".css") == 0) 
+			strcpy(server->response.contentType,"text/css");
 	}
 	if (stat(path, &sbuf) < 0)
 	{
@@ -622,7 +757,11 @@ void _httpd_sendFile(server, path)
 	else
 	{
 		_httpd_sendHeaders(server, sbuf.st_size, sbuf.st_mtime);
-		_httpd_catFile(server, path);
+
+		if (strncmp(server->response.contentType,"text/",5) == 0)
+			_httpd_catFile(server, path, HTTP_EXPAND_TEXT);
+		else
+			_httpd_catFile(server, path, HTTP_RAW_DATA);
 	}
 }
 

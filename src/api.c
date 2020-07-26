@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: api.c,v 1.16 2002/11/25 02:15:51 bambi Exp $
+** $Id: api.c,v 1.22 2005/01/26 04:48:28 bambi Exp $
 **
 */
 
@@ -205,6 +205,29 @@ int httpdAddVariable(server, name, value)
 	return(0);
 }
 
+
+int httpdSetVariableValue(server, name, value)
+	httpd	*server;
+	char	*name,
+		*value;
+{
+	httpVar *var;
+
+	var = httpdGetVariableByName(server, name);
+	if (var)
+	{
+		if (var->value)
+			free(var->value);
+		var->value = strdup(value);
+		return(0);
+	}
+	else
+	{
+		return(httpdAddVariable(server,name,value));
+	}
+}
+
+
 httpd *httpdCreate(host, port)
 	char	*host;
 	int	port;
@@ -322,7 +345,7 @@ int httpdGetConnection(server, timeout)
 	int	result;
 	fd_set	fds;
 	struct  sockaddr_in     addr;
-	size_t  addrLen;
+	int	addrLen;
 	char	*ipaddr;
 
 	FD_ZERO(&fds);
@@ -502,6 +525,15 @@ int httpdReadRequest(server)
 					}
 					strncpy(server->request.authUser, 
 						authBuf, HTTP_MAX_AUTH);
+				}
+			}
+			if (strncasecmp(buf,"Host: ",6) == 0)
+			{
+				cp = index(buf,':') + 2;
+				if(cp)
+				{
+					strncpy(server->request.host,cp,
+						HTTP_MAX_URL);
 				}
 			}
 			if (strncasecmp(buf,"Referer: ",9) == 0)
@@ -771,6 +803,31 @@ int httpdAddStaticContent(server, dir, name, indexFlag, preload, data)
 	return(0);
 }
 
+int httpdAddEmberContect(server, dir, name, indexFlag, preload, script)
+	httpd	*server;
+	char	*dir;
+	char	*name;
+	int	(*preload)();
+	char	*script;
+{
+	httpDir	*dirPtr;
+	httpContent *newEntry;
+
+	dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
+	newEntry =  malloc(sizeof(httpContent));
+	if (newEntry == NULL)
+		return(-1);
+	bzero(newEntry,sizeof(httpContent));
+	newEntry->name = strdup(name);
+	newEntry->type = HTTP_EMBER_FUNCT;
+	newEntry->indexFlag = indexFlag;
+	newEntry->data = script;
+	newEntry->preload = preload;
+	newEntry->next = dirPtr->entries;
+	dirPtr->entries = newEntry;
+	return(0);
+}
+
 void httpdSendHeaders(server)
 	httpd	*server;
 {
@@ -953,12 +1010,19 @@ void httpdProcessRequest(server)
 			(entry->function)(server);
 			break;
 
+#ifdef HAVE_EMBER
+		case HTTP_EMBER_FUNCT:
+		case HTTP_EMBER_WILDCARD:
+			_httpd_executeEmber(server, entry->data);
+			break;
+#endif
+
 		case HTTP_STATIC:
 			_httpd_sendStatic(server, entry->data);
 			break;
 
 		case HTTP_FILE:
-			_httpd_sendFile(server, entry->path);
+			httpdSendFile(server, entry->path);
 			break;
 
 		case HTTP_WILDCARD:
@@ -985,7 +1049,7 @@ void httpdSetErrorLog(server, fp)
 	server->errorLog = fp;
 }
 
-void httpdAuthenticate(server, realm)
+int httpdAuthenticate(server, realm)
 	httpd	*server;
 	char	*realm;
 {
@@ -998,7 +1062,9 @@ void httpdAuthenticate(server, realm)
 			"WWW-Authenticate: Basic realm=\"%s\"\n", realm);
 		httpdAddHeader(server, buffer);
 		httpdOutput(server,"\n");
+		return(0);
 	}
+	return(1);
 }
 
 
@@ -1014,3 +1080,78 @@ void httpdForceAuthenticate(server, realm)
 	httpdAddHeader(server, buffer);
 	httpdOutput(server,"\n");
 }
+
+
+
+int httpdSetErrorFunction(server, error, function)
+	httpd	*server;
+	int	error;
+        void    (*function)();
+{
+	static	char	errBuf[80];
+
+	switch(error)
+	{
+		case 304:
+			server->errorFunction304 = function;
+			break;
+		case 403:
+			server->errorFunction403 = function;
+			break;
+		case 404:
+			server->errorFunction404 = function;
+			break;
+		default:
+			snprintf(errBuf, 80,
+				"Invalid error code (%d) for custom callback",
+				error);
+			_httpd_writeErrorLog(server,LEVEL_ERROR, errBuf);
+			return(-1);
+			break;
+	}
+	return(0);
+}
+
+
+
+void httpdSendFile(server, path)
+	httpd	*server;
+	char	*path;
+{
+	char	*suffix;
+	struct 	stat sbuf;
+
+	suffix = rindex(path, '.');
+	if (suffix != NULL)
+	{
+		if (strcasecmp(suffix,".gif") == 0) 
+			strcpy(server->response.contentType,"image/gif");
+		if (strcasecmp(suffix,".jpg") == 0) 
+			strcpy(server->response.contentType,"image/jpeg");
+		if (strcasecmp(suffix,".xbm") == 0) 
+			strcpy(server->response.contentType,"image/xbm");
+		if (strcasecmp(suffix,".png") == 0) 
+			strcpy(server->response.contentType,"image/png");
+		if (strcasecmp(suffix,".css") == 0) 
+			strcpy(server->response.contentType,"text/css");
+	}
+	if (stat(path, &sbuf) < 0)
+	{
+		_httpd_send404(server);
+		return;
+	}
+	if (_httpd_checkLastModified(server,sbuf.st_mtime) == 0)
+	{
+		_httpd_send304(server);
+	}
+	else
+	{
+		_httpd_sendHeaders(server, sbuf.st_size, sbuf.st_mtime);
+
+		if (strncmp(server->response.contentType,"text/",5) == 0)
+			_httpd_catFile(server, path, HTTP_EXPAND_TEXT);
+		else
+			_httpd_catFile(server, path, HTTP_RAW_DATA);
+	}
+}
+

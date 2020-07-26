@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: httpd.h,v 1.10 2002/11/25 02:15:51 bambi Exp $
+** $Id: httpd.h,v 1.16 2005/01/26 04:48:28 bambi Exp $
 **
 */
 
@@ -60,6 +60,7 @@ extern "C" {
 #define	HTTP_TIME_STRING_LEN	40
 #define	HTTP_READ_BUF_LEN	4096
 #define	HTTP_ANY_ADDR		NULL
+#define HTTP_MAX_VAR_NAME_LEN	48
 
 #define	HTTP_GET		1
 #define	HTTP_POST		2
@@ -73,6 +74,7 @@ extern "C" {
 #define HTTP_STATIC		4
 #define HTTP_WILDCARD		5
 #define HTTP_C_WILDCARD		6
+#define HTTP_EMBER_WILDCARD	7
 
 #define HTTP_METHOD_ERROR "\n<B>ERROR : Method Not Implemented</B>\n\n"
 
@@ -98,6 +100,7 @@ typedef	struct {
 		contentLength,
 		authLength;
 	char	path[HTTP_MAX_URL],
+		host[HTTP_MAX_URL],
 		userAgent[HTTP_MAX_URL],
 		referer[HTTP_MAX_URL],
 		ifModified[HTTP_MAX_URL],
@@ -169,6 +172,9 @@ typedef struct {
 	httpAcl	*defaultAcl;
 	FILE	*accessLog,
 		*errorLog;
+	void	(*errorFunction304)(),
+		(*errorFunction403)(),
+		(*errorFunction404)();
 } httpd;
 
 
@@ -180,6 +186,7 @@ typedef struct {
 
 int httpdAddCContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),void(*)()));
 int httpdAddFileContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),char*));
+int httpdAddEmberContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),char*));
 int httpdAddStaticContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),char*));
 int httpdAddWildcardContent __ANSI_PROTO((httpd*,char*,int(*)(),char*));
 int httpdAddCWildcardContent __ANSI_PROTO((httpd*,char*,int(*)(),void(*)()));
@@ -187,6 +194,8 @@ int httpdAddVariable __ANSI_PROTO((httpd*,char*, char*));
 int httpdGetConnection __ANSI_PROTO((httpd*, struct timeval*));
 int httpdReadRequest __ANSI_PROTO((httpd*));
 int httpdCheckAcl __ANSI_PROTO((httpd*, httpAcl*));
+int httpdAuthenticate __ANSI_PROTO((httpd*, char*));
+int httpdSetErrorFunction __ANSI_PROTO((httpd*,int,void(*)()));
 
 char *httpdRequestMethodName __ANSI_PROTO((httpd*));
 char *httpdUrlEncode __ANSI_PROTO((char *));
@@ -195,6 +204,7 @@ void httpdAddHeader __ANSI_PROTO((httpd*, char*));
 void httpdSetContentType __ANSI_PROTO((httpd*, char*));
 void httpdSetResponse __ANSI_PROTO((httpd*, char*));
 void httpdEndRequest __ANSI_PROTO((httpd*));
+void httpdForceAuthenticate __ANSI_PROTO((httpd*, char*));
 
 httpd *httpdCreate __ANSI_PROTO(());
 void httpdFreeVariables __ANSI_PROTO((httpd*));
@@ -205,6 +215,7 @@ void httpdProcessRequest __ANSI_PROTO((httpd*));
 void httpdSendHeaders __ANSI_PROTO((httpd*));
 void httpdSetFileBase __ANSI_PROTO((httpd*, char*));
 void httpdSetCookie __ANSI_PROTO((httpd*, char*, char*));
+void httpdSendFile __ANSI_PROTO((httpd*, char*));
 
 void httpdSetErrorLog __ANSI_PROTO((httpd*, FILE*));
 void httpdSetAccessLog __ANSI_PROTO((httpd*, FILE*));
