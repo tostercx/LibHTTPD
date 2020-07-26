@@ -14,12 +14,12 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: httpd_priv.h,v 1.2 2002/03/04 03:53:43 bambi Exp $
+** $Id: httpd_priv.h,v 1.4 2002/10/10 06:03:22 bambi Exp $
 **
 */
 
 /*
-**  libhttpd Header File
+**  libhttpd Private Header File
 */
 
 
@@ -46,15 +46,13 @@ extern "C" {
 #define	LEVEL_NOTICE	"notice"
 #define LEVEL_ERROR	"error"
 
-
-
 char * _httpd_unescape __ANSI_PROTO((char*));
 char *_httpd_escape __ANSI_PROTO((char*));
 char _httpd_from_hex  __ANSI_PROTO((char));
 
 
 void _httpd_catFile __ANSI_PROTO((httpd*, char*));
-void _httpd_send304 __ANSI_PROTO((httpd*));
+void _httpd_send403 __ANSI_PROTO((httpd*));
 void _httpd_send404 __ANSI_PROTO((httpd*));
 void _httpd_sendText __ANSI_PROTO((httpd*, char*));
 void _httpd_sendFile __ANSI_PROTO((httpd*, char*));

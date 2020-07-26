@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: httpd.h,v 1.4 2002/03/13 07:24:20 bambi Exp $
+** $Id: httpd.h,v 1.9 2002/10/10 06:03:22 bambi Exp $
 **
 */
 
@@ -53,6 +53,7 @@ extern "C" {
 #define HTTP_MAX_LEN		10240
 #define HTTP_MAX_URL		1024
 #define HTTP_MAX_HEADERS	1024
+#define HTTP_MAX_AUTH		128
 #define	HTTP_IP_ADDR_LEN	17
 #define	HTTP_TIME_STRING_LEN	40
 #define	HTTP_READ_BUF_LEN	4096
@@ -78,7 +79,13 @@ extern "C" {
 #define httpdRequestContentType(s)	s->request.contentType
 #define httpdRequestContentLength(s)	s->request.contentLength
 
+#define HTTP_ACL_PERMIT		1
+#define HTTP_ACL_DENY		2
 
+
+
+extern char 	LIBHTTPD_VERSION[],
+		LIBHTTPD_VENDOR[];
 
 /***********************************************************************
 ** Type Definitions
@@ -86,12 +93,15 @@ extern "C" {
 
 typedef	struct {
 	int	method,
-		contentLength;
+		contentLength,
+		authLength;
 	char	path[HTTP_MAX_URL],
 		userAgent[HTTP_MAX_URL],
 		referer[HTTP_MAX_URL],
 		ifModified[HTTP_MAX_URL],
-		contentType[HTTP_MAX_URL];
+		contentType[HTTP_MAX_URL],
+		authUser[HTTP_MAX_AUTH],
+		authPassword[HTTP_MAX_AUTH];
 } httpReq;
 
 
@@ -131,6 +141,14 @@ typedef struct _httpd_dir{
 } httpDir;
 
 
+typedef struct ip_acl_s{
+        int     addr;
+        char    len,
+                action;
+        struct  ip_acl_s *next;
+} httpAcl;
+
+
 typedef struct {
 	int	port,
 		serverSock,
@@ -146,6 +164,7 @@ typedef struct {
 	httpRes response;
 	httpVar	*variables;
 	httpDir	*content;
+	httpAcl	*defaultAcl;
 	FILE	*accessLog,
 		*errorLog;
 } httpd;
@@ -163,8 +182,9 @@ int httpdAddStaticContent __ANSI_PROTO((httpd*,char*,char*,int,int(*)(),char*));
 int httpdAddWildcardContent __ANSI_PROTO((httpd*,char*,int(*)(),char*));
 int httpdAddCWildcardContent __ANSI_PROTO((httpd*,char*,int(*)(),void(*)()));
 int httpdAddVariable __ANSI_PROTO((httpd*,char*, char*));
-int httpdGetConnection __ANSI_PROTO((httpd*));
+int httpdGetConnection __ANSI_PROTO((httpd*, struct timeval*));
 int httpdReadRequest __ANSI_PROTO((httpd*));
+int httpdCheckAcl __ANSI_PROTO((httpd*, httpAcl*));
 
 char *httpdRequestMethodName __ANSI_PROTO((httpd*));
 char *httpdUrlEncode __ANSI_PROTO((char *));
@@ -175,6 +195,7 @@ void httpdSetResponse __ANSI_PROTO((httpd*, char*));
 void httpdEndRequest __ANSI_PROTO((httpd*));
 
 httpd *httpdCreate __ANSI_PROTO(());
+void httpdFreeVariables __ANSI_PROTO((httpd*));
 void httpdDumpVariables __ANSI_PROTO((httpd*));
 void httpdOutput __ANSI_PROTO((httpd*, char*));
 void httpdPrintf __ANSI_PROTO((httpd*, char*, ...));
@@ -185,11 +206,14 @@ void httpdSetCookie __ANSI_PROTO((httpd*, char*, char*));
 
 void httpdSetErrorLog __ANSI_PROTO((httpd*, FILE*));
 void httpdSetAccessLog __ANSI_PROTO((httpd*, FILE*));
+void httpdSetDefaultAcl __ANSI_PROTO((httpd*, httpAcl*));
 
 httpVar	*httpdGetVariableByName __ANSI_PROTO((httpd*, char*));
 httpVar	*httpdGetVariableByPrefix __ANSI_PROTO((httpd*, char*));
 httpVar	*httpdGetVariableByPrefixedName __ANSI_PROTO((httpd*, char*, char*));
 httpVar *httpdGetNextVariableByPrefix __ANSI_PROTO((httpVar*, char*));
+
+httpAcl *httpdAddAcl __ANSI_PROTO((httpd*, httpAcl*, char*, int));
 
 
 /***********************************************************************

@@ -14,7 +14,7 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: api.c,v 1.6 2002/03/13 07:24:19 bambi Exp $
+** $Id: api.c,v 1.12 2002/10/16 00:36:34 bambi Exp $
 **
 */
 
@@ -272,8 +272,9 @@ void httpdDestroy(server)
 
 
 
-int httpdGetConnection(server)
+int httpdGetConnection(server, timeout)
 	httpd	*server;
+	struct	timeval *timeout;
 {
 	int	result;
 	fd_set	fds;
@@ -286,10 +287,14 @@ int httpdGetConnection(server)
 	result = 0;
 	while(result == 0)
 	{
-		result = select(server->serverSock + 1, &fds, 0, 0, NULL);
+		result = select(server->serverSock + 1, &fds, 0, 0, timeout);
 		if (result < 0)
 		{
 			return(-1);
+		}
+		if (timeout != 0 && result == 0)
+		{
+			return(0);
 		}
 		if (result > 0)
 		{
@@ -307,7 +312,19 @@ int httpdGetConnection(server)
 		*server->clientAddr = 0;
 	server->readBufRemain = 0;
 	server->readBufPtr = NULL;
-	return(0);
+
+	/*
+	** Check the default ACL
+	*/
+	if (server->defaultAcl)
+	{
+		if (httpdCheckAcl(server, server->defaultAcl) == HTTP_ACL_DENY)
+		{
+			httpdEndRequest(server);
+			return(-2);
+		}
+	}
+	return(1);
 }
 
 
@@ -319,6 +336,7 @@ int httpdReadRequest(server)
 	int	count,
 		inHeaders;
 	char	*cp, *cp2;
+	int	_httpd_decode();
 
 
 	/*
@@ -414,6 +432,33 @@ int httpdReadRequest(server)
 					var = end;
 				}
 			}
+			if (strncasecmp(buf,"Authorization: ",15) == 0)
+			{
+				cp = index(buf,':') + 2;
+				if (strncmp(cp,"Basic ", 6) != 0)
+				{
+					/* Unknown auth method */
+				}
+				else
+				{
+					char 	authBuf[100];
+
+					cp = index(cp,' ') + 1;
+					_httpd_decode(cp, authBuf, 100);
+					server->request.authLength = 
+						strlen(authBuf);
+					cp = index(authBuf,':');
+					if (cp)
+					{
+						*cp = 0;
+						strncpy(
+						   server->request.authPassword,
+						   cp+1, HTTP_MAX_AUTH);
+					}
+					strncpy(server->request.authUser, 
+						authBuf, HTTP_MAX_AUTH);
+				}
+			}
 			if (strncasecmp(buf,"Referer: ",9) == 0)
 			{
 				cp = index(buf,':') + 2;
@@ -489,6 +534,14 @@ void httpdEndRequest(server)
 	close(server->clientSock);
 	bzero(&server->request, sizeof(server->request));
 }
+
+
+void httpdFreeVariables(server)
+        httpd   *server;
+{
+        _httpd_freeVariables(server->variables);
+}
+
 
 
 void httpdDumpVariables(server)
@@ -608,7 +661,7 @@ int httpdAddCContent(server, dir, name, indexFlag, preload, function)
 	httpDir	*dirPtr;
 	httpContent *newEntry;
 
-	dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
+		dirPtr = _httpd_findContentDir(server, dir, HTTP_TRUE);
 	newEntry =  malloc(sizeof(httpContent));
 	if (newEntry == NULL)
 		return(-1);
@@ -885,4 +938,34 @@ void httpdSetErrorLog(server, fp)
 	FILE	*fp;
 {
 	server->errorLog = fp;
+}
+
+void httpdAuthenticate(server, realm)
+	httpd	*server;
+	char	*realm;
+{
+	char	buffer[255];
+
+	if (server->request.authLength == 0)
+	{
+		httpdSetResponse(server, "401 Please Authenticate");
+		snprintf(buffer,sizeof(buffer), 
+			"WWW-Authenticate: Basic realm=\"%s\"\n", realm);
+		httpdAddHeader(server, buffer);
+		httpdOutput(server,"\n");
+	}
+}
+
+
+void httpdForceAuthenticate(server, realm)
+	httpd	*server;
+	char	*realm;
+{
+	char	buffer[255];
+
+	httpdSetResponse(server, "401 Please Authenticate");
+	snprintf(buffer,sizeof(buffer), 
+		"WWW-Authenticate: Basic realm=\"%s\"\n", realm);
+	httpdAddHeader(server, buffer);
+	httpdOutput(server,"\n");
 }

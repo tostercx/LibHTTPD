@@ -14,14 +14,15 @@
 ** connection with the use or performance of this software.
 **
 **
-** $Id: test_httpd.c,v 1.6 2002/03/18 03:57:47 bambi Exp $
+** $Id: test_httpd.c,v 1.9 2002/10/09 23:19:14 bambi Exp $
 **
 */
 
 
 #include <stdio.h>
+#include <unistd.h>
+#include <sys/time.h>
 #include "httpd.h"
-
 
 /*
 ** This is a static page of HTML.  It is loaded into the content
@@ -49,6 +50,8 @@ void index_html(server)
 	    getpid());
 	httpdPrintf(server,
 	    "Click <A HREF=/test1.html>here</A> to view a test page<P>\n");
+	httpdPrintf(server,
+	    "Click <A HREF=/login.html>here</A> to authenticate<P>\n");
 	httpdPrintf(server,
 	    "Or <A HREF=/wildcard/foo>here</A> for a test wildcard page<P>\n");
 	httpdPrintf(server, "<P><FORM ACTION=test2.html METHOD=POST>\n");
@@ -91,16 +94,85 @@ void test3_html(server)
 
 
 
+void login_html(server)
+	httpd	*server;
+{
+	if (httpdAuthenticate(server, "LibHTTPD Test") == 0)
+		return;
+	httpdPrintf(server, "Your username is '%s'<P>\n",
+		server->request.authUser);
+	httpdPrintf(server, "Your password is '%s'<P>\n",
+ 		server->request.authPassword);
+	httpdOutput(server, 
+		"Click <A HREF=login2.html>here</A> to force reauthentication");
+	httpdOutput(server, ".  Use a username = test password = 123");
+}
+
+
+
+void login2_html(server)
+	httpd	*server;
+{
+	if (httpdAuthenticate(server, "LibHTTPD Test") == 0)
+	{
+		httpdOutput(server, "Authentication failure(1).");
+		return;
+	}
+	if (strcmp(server->request.authUser, "test") != 0 ||
+	    strcmp(server->request.authPassword, "123") != 0)
+	{
+		httpdForceAuthenticate(server, "LibHTTPD Test");
+		httpdOutput(server, "Authentication failure (2).");
+		return;
+	}
+	httpdOutput(server, "Your login was accepted.");
+}
+
+
 int main(argc, argv)
 	int	argc;
 	char	*argv[];
 {
 	httpd	*server;
+	char 	*host;
+	int 	port,
+		errFlag,
+		result;
+	extern char *optarg;
+	extern int optind, opterr, optopt;
+	int c;
+	struct	timeval timeout;
+
+	host = NULL;
+	port = 80;
+	errFlag = 0;
+	while ( (c=getopt(argc,argv,"h:p:")) != -1 )
+	{
+		switch ( c ) 
+		{
+			case 'h':
+				host=optarg;
+				break;
+
+			case 'p':
+				port = atoi(optarg);
+				break;
+			default:
+				errFlag++;
+		}
+	}
+	if (errFlag)
+	{
+		fprintf(stderr,"usage: [-h <host IP>] [ -p <port >]\n");
+		fprintf(stderr,"\nLibHTTPD version %s\n\n",LIBHTTPD_VERSION);
+		exit(1);
+	}
+
 
 	/*
 	** Create a server and setup our logging
 	*/
-	server = httpdCreate(NULL,81);
+	server = httpdCreate(host,port);
 	if (server == NULL)
 	{
 		perror("Can't create server");
@@ -116,6 +188,10 @@ int main(argc, argv)
 		NULL, index_html);
 	httpdAddCContent(server,"/", "test2.html", HTTP_FALSE, 
 		NULL, test2_html);
+	httpdAddCContent(server,"/", "login.html", HTTP_FALSE,
+		NULL, login_html);
+	httpdAddCContent(server,"/", "login2.html", HTTP_FALSE,
+		NULL, login2_html);
 	httpdAddCWildcardContent(server,"/wildcard", NULL, test3_html);
 	httpdAddStaticContent(server, "/", "test1.html", HTTP_FALSE,
 		NULL, test1_html);
@@ -123,10 +199,22 @@ int main(argc, argv)
 	/*
 	** Go into our service loop
 	*/
+	timeout.tv_sec = 5;
+	timeout.tv_usec = 0;
+
 	while(1 == 1)
 	{
-		if (httpdGetConnection(server) < 0)
+		result = httpdGetConnection(server, &timeout);
+		if (result == 0)
+		{
+			printf("Timeout ... \n");
 			continue;
+		}
+		if (result < 0)
+		{
+			printf("Error ... \n");
+			continue;
+		}
 		if(httpdReadRequest(server) < 0)
 		{
 			httpdEndRequest(server);
